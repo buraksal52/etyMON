@@ -93,7 +93,9 @@ Copy `.env.example` for local development. In production configure at least:
 
 - FastAPI: `APP_ENV`, `APP_URL`, `ALLOWED_ORIGINS`, `SESSION_SECRET`, and
   `DATABASE_URL`.
-- Vercel: `NEXT_PUBLIC_API_URL` set to the public Railway API URL.
+- Vercel: `NEXT_PUBLIC_API_URL=/api` and `API_PROXY_TARGET` set to the public
+  Railway API URL. Next.js proxies `/api/*` to FastAPI so session cookies stay
+  first-party (Safari and other browsers block cross-site API cookies).
 - Railway Storage: `STORAGE_PROVIDER=railway`, `STORAGE_BUCKET`,
   `STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`, and `STORAGE_SECRET_KEY`.
 - Rewards, only when enabled: `MONAD_RPC_URL`, `MONAD_CHAIN_ID`,
@@ -108,8 +110,9 @@ origin (and any intentionally used preview origin).
 
 1. Import the repository into Vercel and select the `apps/web` workspace, or
    keep the repository root and use the committed `vercel.json`.
-2. Set `NEXT_PUBLIC_API_URL` to the deployed Railway API URL.
-3. Deploy. The configured build command is `npm run build:web`.
+2. Set `NEXT_PUBLIC_API_URL=/api` and `API_PROXY_TARGET` to the deployed
+   Railway API URL.
+3. Deploy. The configured build command is `npm run build`.
 
 ### Railway API and database
 
