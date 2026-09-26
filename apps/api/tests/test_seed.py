@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.db.models import Base, Event, Organizer, Participant, PrizeConfig, Task
+from app.db.models import Base, Event, EventParticipant, Organizer, Participant, PrizeConfig, Task
 from app.db.seed import seed_development_data
 
 
@@ -28,3 +28,10 @@ def test_phase_one_seed_counts() -> None:
             "Prize Set A",
             "Prize Set B",
         }
+
+        db.query(EventParticipant).delete()
+        db.commit()
+
+        repaired = seed_development_data(db)
+        assert repaired["participants"] == 10
+        assert db.query(EventParticipant).count() == 10

@@ -21,6 +21,39 @@ def seed_development_data(db: Session) -> dict[str, int]:
     """Create the deterministic Phase 1 development dataset."""
     existing_event = db.query(Event).filter_by(slug="monad-hackathon").one_or_none()
     if existing_event is not None:
+        organizer = db.query(Organizer).filter_by(email="organizer@example.com").one_or_none()
+        if organizer is None:
+            db.add(
+                Organizer(
+                    email="organizer@example.com",
+                    name="Platform Organizer",
+                    password_hash_or_auth_provider_id=hash_password("phase3-demo-password"),
+                )
+            )
+
+        for index in range(1, 11):
+            email = f"participant{index}@example.com"
+            participant = db.query(Participant).filter_by(email=email).one_or_none()
+            if participant is None:
+                participant = Participant(email=email, display_name=f"Participant {index}")
+                db.add(participant)
+                db.flush()
+            membership = (
+                db.query(EventParticipant)
+                .filter_by(event_id=existing_event.id, participant_id=participant.id)
+                .one_or_none()
+            )
+            if membership is None:
+                db.add(
+                    EventParticipant(
+                        event_id=existing_event.id,
+                        participant_id=participant.id,
+                        eligible=True,
+                    )
+                )
+            else:
+                membership.eligible = True
+        db.commit()
         return {
             "events": db.query(Event).count(),
             "organizers": db.query(Organizer).count(),
