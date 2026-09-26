@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.settings import settings
+from app.rate_limit import join_rate_limiter
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -49,9 +50,17 @@ def get_event(slug: str, db: Session = Depends(get_db)) -> dict[str, object]:
 def join_event(
     slug: str,
     payload: JoinRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
+    client_host = request.client.host if request.client else "unknown"
+    if not join_rate_limiter.allow(f"{client_host}:{normalize_email(payload.email)}"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many join attempts",
+            headers={"Retry-After": "60"},
+        )
     event = db.query(Event).filter_by(slug=slug).one_or_none()
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")

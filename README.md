@@ -47,6 +47,11 @@ under `storage-data/` for proof and receipt uploads. Production must set
 Authentication and the event flows are implemented in later phases described
 in `docs/`.
 
+State-changing browser requests are checked against the configured allowed
+origins. Login and participant-join endpoints also have an in-memory MVP rate
+limit; for multiple Railway API instances, replace it with a shared Redis- or
+database-backed limiter.
+
 Development organizer credentials:
 
 ```text

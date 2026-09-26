@@ -2,7 +2,7 @@ import csv
 import io
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -31,6 +31,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.settings import settings
+from app.rate_limit import login_rate_limiter
 from app.storage import StorageProvider, get_storage_provider
 from app.leaderboard import calculate_leaderboard, serialize_leaderboard
 
@@ -98,9 +99,17 @@ class TaskUpdateRequest(BaseModel):
 @router.post("/login")
 def admin_login(
     payload: AdminLoginRequest,
+    request: Request,
     response: Response,
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
+    client_host = request.client.host if request.client else "unknown"
+    if not login_rate_limiter.allow(f"{client_host}:{normalize_email(payload.email)}"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts",
+            headers={"Retry-After": "60"},
+        )
     organizer = db.query(Organizer).filter_by(email=normalize_email(payload.email)).one_or_none()
     if organizer is None or not verify_password(
         payload.password, organizer.password_hash_or_auth_provider_id
