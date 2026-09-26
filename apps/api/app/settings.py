@@ -7,12 +7,13 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://platform:platform@localhost:5432/platform"
     event_timezone: str = "event-local"
     session_secret: str = "phase0-development-secret-change-me"
-    storage_provider: str = "railway"
+    storage_provider: str = "local"
     storage_bucket: str = ""
     storage_endpoint: str = ""
     storage_access_key: str = ""
     storage_secret_key: str = ""
     storage_public_base_url: str = ""
+    storage_local_dir: str = "storage-data"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
