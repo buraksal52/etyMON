@@ -6,6 +6,7 @@ const SECTIONS = [
   { slug: "tasks", label: "Görevler" },
   { slug: "submissions", label: "Gönderimler" },
   { slug: "leaderboard", label: "Leaderboard" },
+  { slug: "rewards", label: "Ödüller" },
   { slug: "reimbursements", label: "Masraflar" },
 ];
 

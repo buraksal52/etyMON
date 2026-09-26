@@ -119,8 +119,13 @@ export default function AdminEventDashboardPage() {
           <div>
             <p className="eyebrow">Participant entry</p>
             <h2>Event QR</h2>
-            <p>Scan the QR code or enter this event code to join the waiting queue.</p>
-            <p><strong>Event code:</strong> <code>{dashboard.event.slug}</code></p>
+            <p>
+              Scan the QR code or enter this event code to join the waiting
+              queue.
+            </p>
+            <p>
+              <strong>Event code:</strong> <code>{dashboard.event.slug}</code>
+            </p>
             <p>Participants verify their email after opening the event.</p>
             <code>{eventQr.url}</code>
           </div>
@@ -141,6 +146,7 @@ export default function AdminEventDashboardPage() {
         <Link href={`/admin/events/${params.id}/tasks`}>Tasks</Link>
         <Link href={`/admin/events/${params.id}/submissions`}>Submissions</Link>
         <Link href={`/admin/events/${params.id}/leaderboard`}>Leaderboard</Link>
+        <Link href={`/admin/events/${params.id}/rewards`}>Rewards</Link>
         <Link href={`/admin/events/${params.id}/reimbursements`}>
           Reimbursements
         </Link>
