@@ -125,6 +125,41 @@ def test_submission_rejects_unsupported_file_type_and_missing_proof() -> None:
     assert missing_url.status_code == 422
 
 
+def test_submission_rejects_wrong_participant() -> None:
+    client, event_id, assignment_id, engine, storage = make_submission_client()
+
+    with Session(engine) as db:
+        other = Participant(email="other@example.com", display_name="Other")
+        db.add(other)
+        db.flush()
+        db.add(EventParticipant(event_id=event_id, participant_id=other.id, eligible=True))
+        db.commit()
+        other_id = other.id
+
+    client.cookies.set("platform_session", create_session_token(event_id, other_id))
+    response = client.post(
+        f"/assignments/{assignment_id}/submit",
+        files={"file": ("proof.png", b"\x89PNG\r\n\x1a\nimage-bytes", "image/png")},
+    )
+
+    assert response.status_code == 403
+    assert storage.objects == {}
+
+
+def test_submission_rejects_oversized_file() -> None:
+    client, _, assignment_id, _, storage = make_submission_client()
+    oversized_png = b"\x89PNG\r\n\x1a\n" + b"x" * (10 * 1024 * 1024)
+
+    response = client.post(
+        f"/assignments/{assignment_id}/submit",
+        data={"url": "https://example.com/proof"},
+        files={"file": ("large.png", oversized_png, "image/png")},
+    )
+
+    assert response.status_code == 413
+    assert storage.objects == {}
+
+
 def test_new_submission_is_rejected_after_event_deadline() -> None:
     client, _, assignment_id, engine, storage = make_submission_client()
 

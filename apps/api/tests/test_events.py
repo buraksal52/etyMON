@@ -75,6 +75,18 @@ def test_unknown_email_is_rejected_without_session() -> None:
     assert "platform_session" not in client.cookies
 
 
+def test_duplicate_join_is_idempotent_without_duplicate_membership() -> None:
+    client, event_id, engine = make_client()
+
+    first = client.post("/events/test-event/join", json={"email": "alice@example.com"})
+    second = client.post("/events/test-event/join", json={"email": "ALICE@example.com"})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    with Session(engine) as db:
+        assert db.query(EventParticipant).filter_by(event_id=event_id).count() == 1
+
+
 def test_participant_can_read_progress_counts() -> None:
     client, event_id, engine = make_client()
     assert (
