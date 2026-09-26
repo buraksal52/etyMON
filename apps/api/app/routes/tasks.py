@@ -147,11 +147,31 @@ def get_current_task(
         .order_by(TaskAssignment.assigned_at.desc())
         .first()
     )
+    latest_assignment = (
+        db.query(TaskAssignment)
+        .filter(
+            TaskAssignment.event_id == event_id,
+            TaskAssignment.participant_id == session.participant_id,
+        )
+        .order_by(TaskAssignment.assigned_at.desc())
+        .first()
+    )
     if assignment is None:
-        return {"assignment": None}
+        if latest_assignment is None:
+            return {"assignment": None, "lastAssignment": None}
+        latest_task = db.get(Task, latest_assignment.task_id)
+        if latest_task is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Assigned task not found",
+            )
+        return {
+            "assignment": None,
+            "lastAssignment": serialize_assignment(latest_assignment, latest_task),
+        }
     task = db.get(Task, assignment.task_id)
     if task is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Assigned task not found"
         )
-    return {"assignment": serialize_assignment(assignment, task)}
+    return {"assignment": serialize_assignment(assignment, task), "lastAssignment": None}

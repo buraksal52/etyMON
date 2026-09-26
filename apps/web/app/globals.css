@@ -145,6 +145,14 @@ button:disabled {
   color: #067647;
 }
 
+.review-card {
+  text-align: center;
+}
+
+.review-card h1 {
+  margin-bottom: 1rem;
+}
+
 .admin-screen {
   display: block;
   width: min(100%, 54rem);

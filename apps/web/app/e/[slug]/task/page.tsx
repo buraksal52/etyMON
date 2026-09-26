@@ -9,6 +9,7 @@ import { apiRequest } from "../../../../lib/api";
 type Assignment = {
   id: string;
   status: string;
+  assignedAt?: string;
   task: {
     title: string;
     description: string;
@@ -22,8 +23,11 @@ export default function TaskPage() {
   const searchParams = useSearchParams();
   const eventId = searchParams.get("eventId");
   const [assignment, setAssignment] = useState<Assignment | null>(null);
+  const [resolvedAssignment, setResolvedAssignment] =
+    useState<Assignment | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [awaitingReview, setAwaitingReview] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -37,11 +41,24 @@ export default function TaskPage() {
     let active = true;
     async function loadTask() {
       try {
-        const current = await apiRequest<{ assignment: Assignment | null }>(
-          `/events/${eventId}/tasks/current`,
-        );
+        const current = await apiRequest<{
+          assignment: Assignment | null;
+          lastAssignment: Assignment | null;
+        }>(`/events/${eventId}/tasks/current`);
         if (current.assignment) {
-          if (active) setAssignment(current.assignment);
+          if (active) {
+            setAssignment(current.assignment);
+            setResolvedAssignment(null);
+            setAwaitingReview(current.assignment.status === "SUBMITTED");
+          }
+          return;
+        }
+        if (current.lastAssignment) {
+          if (active) {
+            setAssignment(null);
+            setResolvedAssignment(current.lastAssignment);
+            setAwaitingReview(false);
+          }
           return;
         }
         const next = await apiRequest<{ assignment: Assignment }>(
@@ -50,7 +67,11 @@ export default function TaskPage() {
             method: "POST",
           },
         );
-        if (active) setAssignment(next.assignment);
+        if (active) {
+          setAssignment(next.assignment);
+          setResolvedAssignment(null);
+          setAwaitingReview(false);
+        }
       } catch (requestError) {
         if (active)
           setError(
@@ -69,6 +90,70 @@ export default function TaskPage() {
     };
   }, [eventId]);
 
+  useEffect(() => {
+    if (!eventId || !awaitingReview) return;
+
+    let active = true;
+    const interval = window.setInterval(async () => {
+      try {
+        const current = await apiRequest<{
+          assignment: Assignment | null;
+          lastAssignment: Assignment | null;
+        }>(`/events/${eventId}/tasks/current`);
+        if (!active) return;
+        if (current.assignment) {
+          setAssignment(current.assignment);
+          if (current.assignment.status !== "SUBMITTED") {
+            setAwaitingReview(false);
+          }
+          return;
+        }
+        if (current.lastAssignment) {
+          setAssignment(null);
+          setResolvedAssignment(current.lastAssignment);
+          setAwaitingReview(false);
+        }
+      } catch (requestError) {
+        if (active) {
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "Unable to refresh task status",
+          );
+        }
+      }
+    }, 4000);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [eventId, awaitingReview]);
+
+  async function requestNextTask() {
+    if (!eventId) return;
+    setError("");
+    setMessage("");
+    setLoading(true);
+    try {
+      const next = await apiRequest<{ assignment: Assignment }>(
+        `/events/${eventId}/tasks/next`,
+        { method: "POST" },
+      );
+      setAssignment(next.assignment);
+      setResolvedAssignment(null);
+      setAwaitingReview(false);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to load next task",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (loading)
     return (
       <main className="screen">
@@ -80,6 +165,30 @@ export default function TaskPage() {
       <main className="screen">
         <section className="card">
           <p className="error">{error}</p>
+        </section>
+      </main>
+    );
+  if (resolvedAssignment)
+    return (
+      <main className="screen">
+        <section className="card review-card">
+          <p className="eyebrow">TASK REVIEW</p>
+          <h1>
+            {resolvedAssignment.status === "APPROVED"
+              ? "Task approved"
+              : "Task rejected"}
+          </h1>
+          {resolvedAssignment.status === "APPROVED" ? (
+            <p className="success">
+              +{resolvedAssignment.task.points} points added to your score.
+            </p>
+          ) : (
+            <p>Your proof was not approved. You can try another task.</p>
+          )}
+          <button type="button" onClick={requestNextTask}>
+            Next Task
+          </button>
+          {error && <p className="error">{error}</p>}
         </section>
       </main>
     );
@@ -114,6 +223,7 @@ export default function TaskPage() {
         body: formData,
       });
       setAssignment({ ...currentAssignment, status: "SUBMITTED" });
+      setAwaitingReview(true);
       setMessage("Proof submitted. Waiting for organizer review.");
     } catch (requestError) {
       setError(

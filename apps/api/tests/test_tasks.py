@@ -106,6 +106,12 @@ def test_next_task_respects_current_assignment_and_candidate_rules() -> None:
         assignment.status = AssignmentStatus.APPROVED.value
         db.commit()
 
+    resolved = client.get(f"/events/{event_id}/tasks/current")
+    assert resolved.status_code == 200
+    assert resolved.json()["assignment"] is None
+    assert resolved.json()["lastAssignment"]["id"] == first_assignment["id"]
+    assert resolved.json()["lastAssignment"]["status"] == AssignmentStatus.APPROVED.value
+
     second = client.post(f"/events/{event_id}/tasks/next")
     assert second.status_code == 200
     assert second.json()["assignment"]["task"]["title"] != first_assignment["task"]["title"]
