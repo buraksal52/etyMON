@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import qrcode
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,17 @@ from app.auth import (
     normalize_email,
     verify_password,
 )
+from app.blockchain.processing import (
+    REWARD_TOKEN,
+    ProviderFactory,
+    SessionFactory,
+    advance_settlement,
+    get_reward_provider_factory,
+    get_settlement_session_factory,
+    load_provider,
+    process_settlements,
+    serialize_settlement,
+)
 from app.db.models import (
     AssignmentStatus,
     AuditLog,
@@ -21,7 +33,9 @@ from app.db.models import (
     EventState,
     Organizer,
     Participant,
+    RewardSettlement,
     ScoreEntry,
+    SettlementStatus,
     Submission,
     SubmissionStatus,
     Task,
@@ -72,6 +86,7 @@ class TaskRequest(BaseModel):
     description: str
     instructions: str
     points: int = Field(gt=0)
+    reward_amount: Decimal | None = Field(default=None, ge=0, max_digits=24, decimal_places=8)
     proof_type: str = Field(min_length=1, max_length=32)
     starts_at: datetime | None = None
     expires_at: datetime | None = None
@@ -86,6 +101,7 @@ class TaskUpdateRequest(BaseModel):
     description: str | None = None
     instructions: str | None = None
     points: int | None = Field(default=None, gt=0)
+    reward_amount: Decimal | None = Field(default=None, ge=0, max_digits=24, decimal_places=8)
     proof_type: str | None = Field(default=None, min_length=1, max_length=32)
     starts_at: datetime | None = None
     expires_at: datetime | None = None
@@ -167,6 +183,8 @@ def serialize_task(task: Task) -> dict[str, object]:
         "description": task.description,
         "instructions": task.instructions,
         "points": task.points,
+        "rewardAmount": str(task.reward_amount) if task.reward_amount is not None else None,
+        "rewardToken": REWARD_TOKEN,
         "proofType": task.proof_type,
         "startsAt": task.starts_at,
         "expiresAt": task.expires_at,
@@ -295,6 +313,7 @@ def list_participants(
                 "id": participant.id,
                 "email": participant.email,
                 "displayName": participant.display_name,
+                "walletAddress": participant.wallet_address,
                 "eligible": membership.eligible,
                 "checkedInAt": membership.checked_in_at,
                 "score": membership.score,
@@ -374,6 +393,8 @@ def update_task(
     updates = payload.model_dump(exclude_unset=True, exclude={"metadata"})
     for field, value in updates.items():
         setattr(task, field, value)
+    if "reward_amount" in updates and updates["reward_amount"] is not None:
+        updates["reward_amount"] = str(updates["reward_amount"])
     if "metadata" in payload.model_fields_set:
         task.metadata_json = payload.metadata
     db.add(
@@ -429,10 +450,14 @@ def get_dashboard(
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-    joined_participants = db.query(EventParticipant).filter(
-        EventParticipant.event_id == event.id,
-        EventParticipant.checked_in_at.is_not(None),
-    ).count()
+    joined_participants = (
+        db.query(EventParticipant)
+        .filter(
+            EventParticipant.event_id == event.id,
+            EventParticipant.checked_in_at.is_not(None),
+        )
+        .count()
+    )
     return {
         "event": {
             "id": event.id,
@@ -608,8 +633,11 @@ def admin_leaderboard(
 def review_submission(
     submission_id: str,
     payload: SubmissionReviewRequest,
+    background_tasks: BackgroundTasks,
     current=Depends(get_current_organizer),
     db: Session = Depends(get_db),
+    session_factory: SessionFactory = Depends(get_settlement_session_factory),
+    provider_factory: ProviderFactory = Depends(get_reward_provider_factory),
 ) -> dict[str, object]:
     _, organizer = current
     submission = db.query(Submission).filter_by(id=submission_id).with_for_update().one_or_none()
@@ -637,6 +665,7 @@ def review_submission(
         )
 
     now = datetime.now(timezone.utc)
+    settlement: RewardSettlement | None = None
     submission.reviewed_at = now
     submission.reviewed_by = organizer.id
     submission.review_note = payload.note or None
@@ -656,6 +685,32 @@ def review_submission(
                 )
             )
             event_participant.score += task.points
+        if task.reward_amount is not None and task.reward_amount > 0:
+            settlement = (
+                db.query(RewardSettlement).filter_by(assignment_id=assignment.id).one_or_none()
+            )
+            if settlement is None:
+                settlement = RewardSettlement(
+                    event_id=assignment.event_id,
+                    participant_id=assignment.participant_id,
+                    assignment_id=assignment.id,
+                    amount=task.reward_amount,
+                    currency_or_token=REWARD_TOKEN,
+                    status=SettlementStatus.PENDING.value,
+                )
+                db.add(settlement)
+                db.flush()
+                db.add(
+                    AuditLog(
+                        event_id=assignment.event_id,
+                        actor_type="SYSTEM",
+                        actor_id=None,
+                        action="REWARD_SETTLEMENT_CREATED",
+                        entity_type="REWARD_SETTLEMENT",
+                        entity_id=settlement.id,
+                        metadata_json=None,
+                    )
+                )
         action = "SUBMISSION_APPROVED"
     else:
         submission.status = SubmissionStatus.REJECTED.value
@@ -675,9 +730,74 @@ def review_submission(
         )
     )
     db.commit()
+    # Settlement runs after the response so score approval never waits on Monad RPC.
+    if settlement is not None and settlement.status != SettlementStatus.CONFIRMED.value:
+        background_tasks.add_task(
+            process_settlements, [settlement.id], session_factory, provider_factory
+        )
     return {
         "submissionId": submission.id,
         "status": submission.status,
         "assignmentStatus": assignment.status,
         "scoreAwarded": task.points if payload.decision == "APPROVED" else 0,
+        "rewardSettlementId": settlement.id if settlement is not None else None,
     }
+
+
+@router.get("/events/{event_id}/rewards")
+def list_reward_settlements(
+    event_id: str,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if db.get(Event, event_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    rows = (
+        db.query(RewardSettlement, Participant, Task)
+        .join(Participant, RewardSettlement.participant_id == Participant.id)
+        .outerjoin(TaskAssignment, RewardSettlement.assignment_id == TaskAssignment.id)
+        .outerjoin(Task, TaskAssignment.task_id == Task.id)
+        .filter(RewardSettlement.event_id == event_id)
+        .order_by(RewardSettlement.created_at.desc())
+        .all()
+    )
+    return {
+        "rewards": [
+            serialize_settlement(settlement, participant, task)
+            for settlement, participant, task in rows
+        ]
+    }
+
+
+@router.post("/rewards/{settlement_id}/retry")
+def retry_reward_settlement(
+    settlement_id: str,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+    provider_factory: ProviderFactory = Depends(get_reward_provider_factory),
+) -> dict[str, object]:
+    settlement = db.get(RewardSettlement, settlement_id)
+    if settlement is None:
+        raise HTTPException(status_code=404, detail="Reward settlement not found")
+    if settlement.status == SettlementStatus.CONFIRMED.value:
+        raise HTTPException(status_code=409, detail="Reward was already paid")
+    db.add(
+        AuditLog(
+            event_id=settlement.event_id,
+            actor_type="ORGANIZER",
+            actor_id=current[1].id,
+            action="REWARD_SETTLEMENT_RETRY_REQUESTED",
+            entity_type="REWARD_SETTLEMENT",
+            entity_id=settlement.id,
+            metadata_json={"status": settlement.status},
+        )
+    )
+    db.commit()
+    provider, unavailable_reason = load_provider(provider_factory)
+    settlement = advance_settlement(db, settlement_id, provider, unavailable_reason)
+    participant = db.get(Participant, settlement.participant_id)
+    assignment = (
+        db.get(TaskAssignment, settlement.assignment_id) if settlement.assignment_id else None
+    )
+    task = db.get(Task, assignment.task_id) if assignment is not None else None
+    return {"reward": serialize_settlement(settlement, participant, task)}

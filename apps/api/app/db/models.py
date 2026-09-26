@@ -110,6 +110,7 @@ class Participant(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    wallet_address: Mapped[str | None] = mapped_column(String(42), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now
@@ -148,6 +149,7 @@ class Task(Base):
     description: Mapped[str] = mapped_column(Text)
     instructions: Mapped[str] = mapped_column(Text)
     points: Mapped[int] = mapped_column(Integer)
+    reward_amount: Mapped[Decimal | None] = mapped_column(Numeric(24, 8), nullable=True)
     proof_type: Mapped[str] = mapped_column(String(32))
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -274,6 +276,7 @@ class PrizeConfig(Base):
 
 class RewardSettlement(Base):
     __tablename__ = "reward_settlements"
+    __table_args__ = (UniqueConstraint("assignment_id", name="uq_reward_settlement_assignment"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     event_id: Mapped[str] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
@@ -288,6 +291,7 @@ class RewardSettlement(Base):
     )
     tx_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     chain_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

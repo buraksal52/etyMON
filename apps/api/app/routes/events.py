@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
@@ -11,12 +11,25 @@ from app.auth import (
     get_current_participant,
     normalize_email,
 )
+from app.blockchain.processing import (
+    ProviderFactory,
+    SessionFactory,
+    get_reward_provider_factory,
+    get_settlement_session_factory,
+    normalize_wallet_address,
+    process_settlements,
+    serialize_settlement,
+)
 from app.db.models import (
     AssignmentStatus,
+    AuditLog,
     Event,
     EventParticipant,
     EventState,
     Participant,
+    RewardSettlement,
+    SettlementStatus,
+    Task,
     TaskAssignment,
 )
 from app.db.session import get_db
@@ -36,6 +49,22 @@ class JoinRequest(BaseModel):
         if isinstance(values, dict) and "display_name" not in values and "displayName" in values:
             values = dict(values)
             values["display_name"] = values.pop("displayName")
+        return values
+
+
+class WalletRequest(BaseModel):
+    wallet_address: str = Field(min_length=42, max_length=42)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_camel_case_wallet(cls, values: object) -> object:
+        if (
+            isinstance(values, dict)
+            and "wallet_address" not in values
+            and "walletAddress" in values
+        ):
+            values = dict(values)
+            values["wallet_address"] = values.pop("walletAddress")
         return values
 
 
@@ -169,9 +198,83 @@ def get_me(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     return {
         "eventId": event.id,
-        "participant": {"displayName": participant.display_name},
+        "participant": {
+            "displayName": participant.display_name,
+            "walletAddress": participant.wallet_address,
+        },
         "score": event_participant.score,
         "state": event.state,
+    }
+
+
+@router.put("/{event_id}/wallet")
+def set_wallet(
+    event_id: str,
+    payload: WalletRequest,
+    background_tasks: BackgroundTasks,
+    current: tuple = Depends(get_current_participant),
+    db: Session = Depends(get_db),
+    session_factory: SessionFactory = Depends(get_settlement_session_factory),
+    provider_factory: ProviderFactory = Depends(get_reward_provider_factory),
+) -> dict[str, object]:
+    session, participant, _ = current
+    if session.event_id != event_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Event session mismatch")
+    try:
+        wallet_address = normalize_wallet_address(payload.wallet_address)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    participant.wallet_address = wallet_address
+    db.add(
+        AuditLog(
+            event_id=event_id,
+            actor_type="PARTICIPANT",
+            actor_id=participant.id,
+            action="PARTICIPANT_WALLET_UPDATED",
+            entity_type="PARTICIPANT",
+            entity_id=participant.id,
+            metadata_json={"walletAddress": wallet_address},
+        )
+    )
+    db.commit()
+    # Rewards approved before the wallet existed can now be paid.
+    waiting_ids = [
+        settlement_id
+        for (settlement_id,) in db.query(RewardSettlement.id)
+        .filter_by(participant_id=participant.id, status=SettlementStatus.PENDING.value)
+        .all()
+    ]
+    if waiting_ids:
+        background_tasks.add_task(
+            process_settlements, waiting_ids, session_factory, provider_factory
+        )
+    return {"walletAddress": wallet_address}
+
+
+@router.get("/{event_id}/rewards")
+def list_my_rewards(
+    event_id: str,
+    current: tuple = Depends(get_current_participant),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    session, participant, _ = current
+    if session.event_id != event_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Event session mismatch")
+    rows = (
+        db.query(RewardSettlement, Task)
+        .outerjoin(TaskAssignment, RewardSettlement.assignment_id == TaskAssignment.id)
+        .outerjoin(Task, TaskAssignment.task_id == Task.id)
+        .filter(
+            RewardSettlement.event_id == event_id,
+            RewardSettlement.participant_id == participant.id,
+        )
+        .order_by(RewardSettlement.created_at.desc())
+        .all()
+    )
+    return {
+        "rewards": [
+            serialize_settlement(settlement, participant, task) for settlement, task in rows
+        ]
     }
 
 

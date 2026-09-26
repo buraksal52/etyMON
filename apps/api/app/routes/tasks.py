@@ -41,6 +41,7 @@ def serialize_assignment(assignment: TaskAssignment, task: Task) -> dict[str, ob
             "description": task.description,
             "instructions": task.instructions,
             "points": task.points,
+            "rewardAmount": str(task.reward_amount) if task.reward_amount is not None else None,
             "proofType": task.proof_type,
             "startsAt": task.starts_at,
             "expiresAt": task.expires_at,

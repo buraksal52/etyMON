@@ -82,6 +82,7 @@ class RewardSettlementService:
             result = self.provider.send_reward(reward_input)
         except Exception as exc:
             settlement.status = SettlementStatus.FAILED.value
+            settlement.last_error = str(exc)[:500]
             self._audit(
                 db,
                 settlement,
@@ -94,6 +95,7 @@ class RewardSettlementService:
         settlement.status = SettlementStatus.SUBMITTED.value
         settlement.tx_hash = result.tx_hash
         settlement.chain_id = result.chain_id
+        settlement.last_error = None
         self._audit(
             db,
             settlement,
@@ -116,6 +118,34 @@ class RewardSettlementService:
         settlement.status = SettlementStatus.CONFIRMED.value
         settlement.confirmed_at = datetime.now(timezone.utc)
         self._audit(db, settlement, "REWARD_SETTLEMENT_CONFIRMED")
+        db.commit()
+        db.refresh(settlement)
+        return settlement
+
+    def mark_reverted(self, db: Session, settlement_id: str) -> RewardSettlement:
+        """A submitted transaction was mined but reverted, so nothing was paid."""
+        settlement = self._get_locked(db, settlement_id)
+        if settlement.status != SettlementStatus.SUBMITTED.value:
+            raise SettlementTransitionError(
+                f"Settlement cannot be marked reverted from {settlement.status}"
+            )
+        settlement.status = SettlementStatus.FAILED.value
+        settlement.last_error = "Transaction reverted on chain"
+        self._audit(
+            db,
+            settlement,
+            "REWARD_SETTLEMENT_REVERTED",
+            {"txHash": settlement.tx_hash},
+        )
+        db.commit()
+        db.refresh(settlement)
+        return settlement
+
+    @staticmethod
+    def hold(db: Session, settlement_id: str, reason: str) -> RewardSettlement:
+        """Record why a pending settlement cannot be submitted yet."""
+        settlement = RewardSettlementService._get_locked(db, settlement_id)
+        settlement.last_error = reason[:500]
         db.commit()
         db.refresh(settlement)
         return settlement

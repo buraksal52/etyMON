@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from web3 import Web3
+from web3.exceptions import TransactionNotFound
 
 from app.settings import settings
 
@@ -43,6 +44,10 @@ class SettlementResult:
 class RewardSettlementProvider(Protocol):
     def send_reward(self, input: RewardInput) -> SettlementResult: ...
 
+    def transaction_status(self, tx_hash: str) -> bool | None:
+        """True when mined successfully, False when reverted, None while pending."""
+        ...
+
 
 class MonadRewardPoolGateway(Protocol):
     """Transport boundary for the deployed RewardPool contract.
@@ -59,6 +64,8 @@ class MonadRewardPoolGateway(Protocol):
         recipient: str,
         amount_wei: int,
     ) -> str: ...
+
+    def transaction_status(self, tx_hash: str) -> bool | None: ...
 
 
 class Web3MonadRewardPoolGateway:
@@ -118,6 +125,13 @@ class Web3MonadRewardPoolGateway:
         tx_hash = self.web3.eth.send_raw_transaction(signed.raw_transaction)
         return self.web3.to_hex(tx_hash)
 
+    def transaction_status(self, tx_hash: str) -> bool | None:
+        try:
+            receipt = self.web3.eth.get_transaction_receipt(tx_hash)
+        except TransactionNotFound:
+            return None
+        return receipt["status"] == 1
+
 
 def create_monad_reward_provider() -> "MonadRewardSettlementProvider":
     if settings.monad_chain_id is None:
@@ -148,6 +162,9 @@ class MonadRewardSettlementProvider:
             input.amount_wei,
         )
         return SettlementResult(tx_hash=tx_hash, chain_id=self.chain_id)
+
+    def transaction_status(self, tx_hash: str) -> bool | None:
+        return self.gateway.transaction_status(tx_hash)
 
 
 def validate_reward_input(input: RewardInput) -> None:
