@@ -39,6 +39,11 @@ DATABASE_URL=postgresql+psycopg://platform:platform@localhost:5432/platform \
   apps/api/.venv/bin/python apps/api/seed.py
 ```
 
+Without a `.env` file, development uses the private local filesystem provider
+under `storage-data/` for proof and receipt uploads. Production must set
+`STORAGE_PROVIDER=railway` and the Railway Storage Bucket credentials from
+`.env.example`.
+
 Authentication and the event flows are implemented in later phases described
 in `docs/`.
 
