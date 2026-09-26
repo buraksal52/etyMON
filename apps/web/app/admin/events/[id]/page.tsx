@@ -14,21 +14,61 @@ type Dashboard = {
 
 type EventQr = { url: string; svg: string };
 
+type MetricGroup = {
+  title: string;
+  metrics: { key: string; label: string; highlight?: boolean }[];
+};
+
+const METRIC_GROUPS: MetricGroup[] = [
+  {
+    title: "Participants",
+    metrics: [
+      { key: "registeredParticipants", label: "Registered" },
+      { key: "joinedParticipants", label: "Joined" },
+      { key: "waitingParticipants", label: "In waiting room" },
+      { key: "activeParticipants", label: "Playing now" },
+    ],
+  },
+  {
+    title: "Tasks & reviews",
+    metrics: [
+      { key: "activeTasks", label: "Active tasks" },
+      { key: "totalAssignments", label: "Assigned" },
+      { key: "totalSubmissions", label: "Submitted" },
+      {
+        key: "pendingProofReviews",
+        label: "Waiting for review",
+        highlight: true,
+      },
+      { key: "approvedSubmissions", label: "Approved" },
+      { key: "rejectedSubmissions", label: "Rejected" },
+      { key: "reimbursementRequests", label: "Reimbursements" },
+    ],
+  },
+];
+
+const STATE_LABEL: Record<string, string> = {
+  DRAFT: "Draft",
+  WAITING: "Waiting room open",
+  ACTIVE: "Live",
+  ENDED: "Ended",
+};
+
+function formatRemaining(seconds: number): string {
+  if (seconds <= 0) return "Deadline passed";
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h left`;
+  if (hours > 0) return `${hours}h ${minutes}m left`;
+  return `${Math.max(1, minutes)}m left`;
+}
+
 export default function AdminEventDashboardPage() {
   const params = useParams<{ id: string }>();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [eventQr, setEventQr] = useState<EventQr | null>(null);
   const [error, setError] = useState("");
-  const metricLabels: Record<string, string> = {
-    registeredParticipants: "Registered participants",
-    joinedParticipants: "Joined participants",
-    waitingParticipants: "Waiting participants",
-    activeParticipants: "Active participants",
-    activeTasks: "Active tasks",
-    totalAssignments: "Task assignments",
-    totalSubmissions: "Submissions",
-    approvedSubmissions: "Approved submissions",
-  };
 
   const load = useCallback(async () => {
     try {
@@ -79,41 +119,79 @@ export default function AdminEventDashboardPage() {
     );
   }
 
+  const { metrics } = dashboard;
+  const state = dashboard.event.state;
+
   return (
-    <main className="screen admin-screen">
+    <main className="screen admin-screen event-dashboard">
       <section className="admin-header">
         <div>
           <p className="eyebrow">Organizer dashboard</p>
           <h1>{dashboard.event.name}</h1>
-          <p>State: {dashboard.event.state}</p>
+          <p className="dashboard-status">
+            <span className={`state-pill state-${state.toLowerCase()}`}>
+              {STATE_LABEL[state] ?? state}
+            </span>
+            {state !== "ENDED" && (
+              <span>{formatRemaining(metrics.timeRemainingSeconds ?? 0)}</span>
+            )}
+          </p>
         </div>
         <div className="admin-actions">
-          {dashboard.event.state === "DRAFT" && (
+          {state === "DRAFT" && (
             <button type="button" onClick={() => void changeState("publish")}>
-              Publish
+              Open waiting room
             </button>
           )}
-          {dashboard.event.state === "WAITING" && (
+          {state === "WAITING" && (
             <button type="button" onClick={() => void changeState("start")}>
-              Start
+              Start event
             </button>
           )}
-          {dashboard.event.state === "ACTIVE" && (
+          {state === "ACTIVE" && (
             <button type="button" onClick={() => void changeState("end")}>
-              End
+              End event
             </button>
           )}
         </div>
       </section>
+      <nav className="admin-links" aria-label="Event management">
+        <Link href={`/admin/events/${params.id}/participants`}>
+          Participants
+        </Link>
+        <Link href={`/admin/events/${params.id}/tasks`}>Tasks</Link>
+        <Link href={`/admin/events/${params.id}/submissions`}>
+          Submissions
+          {metrics.pendingProofReviews > 0 &&
+            ` (${metrics.pendingProofReviews})`}
+        </Link>
+        <Link href={`/admin/events/${params.id}/leaderboard`}>Leaderboard</Link>
+        <Link href={`/admin/events/${params.id}/rewards`}>Rewards</Link>
+        <Link href={`/admin/events/${params.id}/reimbursements`}>
+          Reimbursements
+        </Link>
+      </nav>
       {error && <p className="error">{error}</p>}
-      <section className="metrics-grid">
-        {Object.entries(dashboard.metrics).map(([key, value]) => (
-          <article className="card metric-card" key={key}>
-            <p className="eyebrow">{metricLabels[key] ?? key}</p>
-            <strong>{value}</strong>
-          </article>
-        ))}
-      </section>
+      {METRIC_GROUPS.map((group) => (
+        <section className="metric-group" key={group.title}>
+          <h2>{group.title}</h2>
+          <div className="metrics-grid">
+            {group.metrics.map((metric) => (
+              <article
+                className={`card metric-card${
+                  metric.highlight && (metrics[metric.key] ?? 0) > 0
+                    ? " metric-card-alert"
+                    : ""
+                }`}
+                key={metric.key}
+              >
+                <strong>{metrics[metric.key] ?? 0}</strong>
+                <span>{metric.label}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
       {eventQr && (
         <section className="card event-qr-card">
           <div>
@@ -139,18 +217,6 @@ export default function AdminEventDashboardPage() {
           />
         </section>
       )}
-      <nav className="admin-links">
-        <Link href={`/admin/events/${params.id}/participants`}>
-          Participants
-        </Link>
-        <Link href={`/admin/events/${params.id}/tasks`}>Tasks</Link>
-        <Link href={`/admin/events/${params.id}/submissions`}>Submissions</Link>
-        <Link href={`/admin/events/${params.id}/leaderboard`}>Leaderboard</Link>
-        <Link href={`/admin/events/${params.id}/rewards`}>Rewards</Link>
-        <Link href={`/admin/events/${params.id}/reimbursements`}>
-          Reimbursements
-        </Link>
-      </nav>
     </main>
   );
 }

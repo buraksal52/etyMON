@@ -2115,3 +2115,104 @@ fieldset legend {
     gap: 6px;
   }
 }
+
+/* Organizer event dashboard */
+.event-dashboard {
+  width: min(100%, 64rem);
+  margin: 0 auto;
+  text-align: left;
+}
+.event-dashboard .admin-header {
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.event-dashboard .admin-header h1 {
+  margin: 0.25rem 0 0.5rem;
+  font-size: clamp(2rem, 5vw, 3rem);
+}
+.dashboard-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  color: var(--muted);
+}
+.state-pill {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line);
+  color: #f3f5ef;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.state-pill.state-active {
+  border-color: var(--acid);
+  color: var(--acid);
+}
+.event-dashboard .admin-actions button {
+  min-height: 2.75rem;
+  padding: 0 1.25rem;
+}
+.event-dashboard .admin-links {
+  margin: 0 0 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.event-dashboard .admin-links a {
+  padding: 0.5rem 0.9rem;
+}
+.metric-group {
+  margin-bottom: 1.75rem;
+}
+.metric-group h2 {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: normal;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.event-dashboard .metrics-grid {
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.75rem;
+}
+.event-dashboard .metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: auto;
+  margin: 0;
+  padding: 1rem 1.1rem;
+  text-align: left;
+}
+.event-dashboard .metric-card strong {
+  font-size: 2rem;
+  line-height: 1;
+}
+.event-dashboard .metric-card span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.event-dashboard .metric-card-alert {
+  border-color: var(--acid);
+}
+.event-dashboard .metric-card-alert strong {
+  color: var(--acid);
+}
+.event-dashboard .event-qr-card {
+  margin: 0.5rem 0 0;
+}
+@media (max-width: 40rem) {
+  .event-dashboard .event-qr-card {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+  }
+}
+.event-dashboard .event-qr-card code {
+  color: var(--acid);
+}
+.event-dashboard .event-qr-card p:not(.eyebrow) {
+  color: var(--muted);
+}
