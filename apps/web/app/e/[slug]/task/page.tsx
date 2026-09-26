@@ -23,6 +23,7 @@ export default function TaskPage() {
   const eventId = searchParams.get("eventId");
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -92,7 +93,39 @@ export default function TaskPage() {
       </main>
     );
 
-  const { task } = assignment;
+  const currentAssignment = assignment;
+  const { task } = currentAssignment;
+  async function submitProof(proof: {
+    file?: File;
+    text?: string;
+    url?: string;
+  }) {
+    if (!eventId) return;
+    setError("");
+    setMessage("");
+    setSubmitting(true);
+    const formData = new FormData();
+    if (proof.file) formData.append("file", proof.file);
+    if (proof.text) formData.append("text", proof.text);
+    if (proof.url) formData.append("url", proof.url);
+    try {
+      await apiRequest(`/assignments/${currentAssignment.id}/submit`, {
+        method: "POST",
+        body: formData,
+      });
+      setAssignment({ ...currentAssignment, status: "SUBMITTED" });
+      setMessage("Proof submitted. Waiting for organizer review.");
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to submit proof",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <main className="screen">
       <section className="card task-card">
@@ -109,12 +142,10 @@ export default function TaskPage() {
         <p className="proof-type">Required proof: {task.proofType}</p>
         <ProofForm
           proofType={task.proofType}
-          onSubmit={() =>
-            setMessage(
-              "Proof is ready to submit; upload processing is added in Phase 7.",
-            )
-          }
+          onSubmit={submitProof}
+          disabled={submitting || currentAssignment.status !== "ASSIGNED"}
         />
+        {error && <p className="error">{error}</p>}
         {message && <p className="success">{message}</p>}
       </section>
     </main>

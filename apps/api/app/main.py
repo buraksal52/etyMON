@@ -5,6 +5,7 @@ from app.settings import settings
 from app.routes.events import router as events_router
 from app.routes.admin import router as admin_router
 from app.routes.tasks import router as tasks_router
+from app.routes.submissions import router as submissions_router
 
 
 app = FastAPI(title="Platform API", version="0.1.0")
@@ -20,6 +21,7 @@ app.add_middleware(
 app.include_router(events_router)
 app.include_router(admin_router)
 app.include_router(tasks_router)
+app.include_router(submissions_router)
 
 
 @app.get("/health")

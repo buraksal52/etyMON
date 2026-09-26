@@ -5,6 +5,8 @@ sqlalchemy==2.0.40
 alembic==1.15.2
 psycopg[binary]==3.2.6
 itsdangerous==2.2.0
+boto3==1.37.34
+python-multipart==0.0.20
 httpx==0.28.1
 pytest==8.3.5
 ruff==0.9.10
