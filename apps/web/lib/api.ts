@@ -46,6 +46,18 @@ export async function apiRequest<T>(
   }
 
   if (!response.ok) {
+    // Any admin call without a valid organizer session goes to login and
+    // returns to the current page afterwards.
+    if (
+      response.status === 401 &&
+      path.startsWith("/admin/") &&
+      path !== "/admin/login" &&
+      typeof window !== "undefined" &&
+      !window.location.pathname.startsWith("/admin/login")
+    ) {
+      const next = window.location.pathname + window.location.search;
+      window.location.assign(`/admin/login?next=${encodeURIComponent(next)}`);
+    }
     const body = await response.json().catch(() => ({}));
     throw new ApiError(readDetail(body) || "Request failed", response.status);
   }
