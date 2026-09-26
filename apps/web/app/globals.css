@@ -200,6 +200,31 @@ button:disabled {
   box-shadow: inset 0 0 0 1px #c8c8c0;
 }
 
+.leaderboard-card {
+  width: min(100%, 42rem);
+}
+
+.leaderboard-table {
+  display: grid;
+  margin-top: 1.5rem;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 4rem 1fr 5rem 5rem;
+  gap: 0.75rem;
+  align-items: center;
+  border-bottom: 1px solid #ecece7;
+  padding: 0.9rem 0;
+}
+
+.leaderboard-header {
+  color: #6c6c65;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .status-dot {
   display: block;
   width: 0.75rem;

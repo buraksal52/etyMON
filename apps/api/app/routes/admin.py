@@ -29,6 +29,7 @@ from app.db.models import (
 from app.db.session import get_db
 from app.settings import settings
 from app.storage import StorageProvider, get_storage_provider
+from app.leaderboard import calculate_leaderboard, serialize_leaderboard
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -190,6 +191,17 @@ def list_submissions(
             for submission, _, task, participant in rows
         ]
     }
+
+
+@router.get("/events/{event_id}/leaderboard")
+def admin_leaderboard(
+    event_id: str,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if db.get(Event, event_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    return {"leaderboard": serialize_leaderboard(calculate_leaderboard(db, event_id))}
 
 
 @router.post("/submissions/{submission_id}/review")
