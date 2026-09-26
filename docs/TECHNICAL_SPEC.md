@@ -39,13 +39,17 @@ Alternative React frameworks are allowed only if they do not slow implementation
 
 ## Backend
 
-Recommended:
+Required:
 
-* Node.js
-* TypeScript
-* Fastify or NestJS
+* Python 3.12+
+* FastAPI
+* Pydantic v2
+* SQLAlchemy 2.x or SQLModel
+* Alembic
 
-Fastify is preferred for a small hackathon implementation.
+The API is deployed as a Railway service. FastAPI owns authentication,
+event state, task assignment, submissions, scoring, leaderboard,
+reimbursements, and the Monad adapter.
 
 ---
 
@@ -55,7 +59,7 @@ PostgreSQL.
 
 ORM recommendation:
 
-* Prisma
+* SQLAlchemy 2.x with Alembic migrations
 
 ---
 
@@ -69,11 +73,12 @@ Required for:
 
 Possible implementations:
 
-* S3-compatible object storage;
-* Cloudflare R2;
-* Supabase Storage.
+* Amazon S3;
+* Supabase Storage;
+* another S3-compatible object storage provider.
 
-Storage provider must be abstracted from business logic.
+Storage provider must be abstracted from business logic. Railway's local
+filesystem must not be used for durable proof or reimbursement files.
 
 ---
 
@@ -104,7 +109,7 @@ Participant Browser
    Web Frontend
        |
        v
-     API
+   FastAPI API
   /   |    \
  /    |     \
 DB  Storage  Monad
@@ -126,11 +131,11 @@ Organizer Browser
 ```text
 /
 ├── apps/
-│   ├── web/
-│   └── api/
+│   ├── web/                 # Next.js, deployed to Vercel
+│   └── api/                 # FastAPI, deployed to Railway
 │
 ├── packages/
-│   ├── db/
+│   ├── db/                  # SQLAlchemy models and Alembic helpers
 │   ├── contracts/
 │   ├── shared/
 │   └── config/
@@ -142,6 +147,7 @@ Organizer Browser
 │
 ├── docker/
 ├── scripts/
+├── railway.toml
 ├── .env.example
 ├── docker-compose.yml
 ├── package.json
@@ -413,6 +419,33 @@ Use:
 session cookies when possible.
 
 Do not expose participant IDs as authentication credentials.
+
+The Next.js frontend is deployed to Vercel and calls the Railway API through
+the environment-configured `NEXT_PUBLIC_API_URL`. The FastAPI service must
+configure CORS for the Vercel production domain and required preview domains.
+For cross-origin sessions, use secure httpOnly cookies with an explicit
+CSRF strategy and validate the allowed origins server-side.
+
+## Deployment Topology
+
+```text
+Vercel
+  └── Next.js participant and organizer frontend
+          │ HTTPS API requests
+          ▼
+Railway
+  ├── FastAPI API service
+  ├── PostgreSQL service
+  └── optional worker service for reward settlement/retries
+
+External S3-compatible storage
+  └── proof images, receipts, and uploaded documents
+```
+
+Vercel handles frontend previews and production deployments from the web
+application. Railway handles the API, database, migrations, and background
+worker. The API and worker must share the same database and environment
+configuration. Blockchain settlement must be asynchronous and retryable.
 
 ---
 
@@ -1105,6 +1138,12 @@ Suggested:
 ```text
 DATABASE_URL=
 
+API_BASE_URL=
+
+NEXT_PUBLIC_API_URL=
+
+ALLOWED_ORIGINS=
+
 SESSION_SECRET=
 
 APP_URL=
@@ -1114,6 +1153,7 @@ STORAGE_BUCKET=
 STORAGE_ENDPOINT=
 STORAGE_ACCESS_KEY=
 STORAGE_SECRET_KEY=
+STORAGE_PUBLIC_BASE_URL=
 
 MONAD_RPC_URL=
 MONAD_CHAIN_ID=
@@ -1122,6 +1162,9 @@ REWARD_SIGNER_PRIVATE_KEY=
 
 ADMIN_EMAIL=
 ADMIN_PASSWORD_HASH=
+
+RAILWAY_ENVIRONMENT=
+VERCEL_ENV=
 ```
 
 Never commit secrets.
@@ -1198,7 +1241,7 @@ Record settlement failure and allow retry.
 MVP is technically complete when:
 
 * project runs locally from documented commands;
-* PostgreSQL migrations work;
+* PostgreSQL migrations work on Railway and locally;
 * seed command works;
 * participant QR flow works;
 * email eligibility works;
@@ -1214,4 +1257,4 @@ MVP is technically complete when:
 * event end works;
 * contract deploys;
 * one test reward transaction can be executed on Monad;
-* README explains setup.
+* README explains local setup, Vercel frontend deployment, Railway API/database deployment, and required environment variables.

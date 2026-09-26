@@ -89,6 +89,7 @@ Travel reimbursement is required after the critical path.
 Own:
 
 * monorepo;
+* FastAPI application;
 * database;
 * migrations;
 * auth/session;
@@ -170,7 +171,7 @@ Primary directories:
 
 ```text
 packages/contracts
-apps/api/src/blockchain
+apps/api/app/blockchain
 ```
 
 Must not block the core product.
@@ -196,16 +197,19 @@ This agent should integrate continuously rather than only at the end.
 
 Deliverables:
 
-* package manager configured;
+* package manager configured for the Next.js frontend;
+* Python environment and lockfile configured for FastAPI;
 * monorepo bootable;
 * frontend boots;
 * API boots;
 * PostgreSQL boots;
 * linting;
 * formatting;
-* TypeScript configuration;
+* TypeScript and Python configuration;
 * `.env.example`;
-* Docker Compose if useful.
+* Docker Compose if useful for local development;
+* Vercel frontend deployment configuration;
+* Railway API/database deployment configuration.
 
 Gate:
 
@@ -930,7 +934,9 @@ Database startup
 Migration
 Seed
 Frontend start
-Backend start
+FastAPI start
+Vercel deployment
+Railway deployment and migration
 Contract test
 Contract deploy
 Demo credentials
