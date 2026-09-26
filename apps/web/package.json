@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "format": "prettier --write 'app/**/*.{ts,tsx,css}' 'next.config.ts' 'eslint.config.mjs' '*.json'"
+    "format": "prettier --write 'app/**/*.{ts,tsx,css}' 'components/**/*.{ts,tsx}' 'lib/**/*.{ts,tsx}' 'next.config.ts' 'eslint.config.mjs' '*.json'"
   },
   "dependencies": {
     "next": "^15.5.0",

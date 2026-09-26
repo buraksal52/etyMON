@@ -31,7 +31,8 @@ export default function WaitingPage() {
         );
         if (!active) return;
         setStatus(result.state);
-        if (result.state === "ACTIVE") router.push(`/e/${params.slug}/task`);
+        if (result.state === "ACTIVE")
+          router.push(`/e/${params.slug}/task?eventId=${eventId}`);
         if (result.state === "ENDED") router.push(`/e/${params.slug}/ended`);
       } catch (requestError) {
         if (active)

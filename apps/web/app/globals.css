@@ -90,6 +90,61 @@ button:disabled {
   text-align: center;
 }
 
+.task-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.task-heading h1 {
+  margin: 0;
+}
+
+.points {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #eee8ff;
+  padding: 0.45rem 0.7rem;
+  color: #5b35b5;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.instructions {
+  margin: 1.5rem 0;
+  border-left: 3px solid #7f56d9;
+  padding-left: 1rem;
+}
+
+.instructions p {
+  margin-bottom: 0;
+}
+
+.proof-type {
+  color: #6c6c65;
+  font-size: 0.9rem;
+}
+
+.proof-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.proof-form label {
+  margin: 0;
+}
+
+.proof-form textarea {
+  width: 100%;
+  min-height: 7rem;
+  resize: vertical;
+}
+
+.success {
+  color: #067647;
+}
+
 .status-dot {
   display: block;
   width: 0.75rem;
