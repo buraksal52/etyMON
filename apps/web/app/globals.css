@@ -200,6 +200,116 @@ button:disabled {
   margin: 0 auto 1.5rem;
 }
 
+.admin-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.admin-actions button {
+  width: auto;
+  padding: 0 1rem;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1rem;
+}
+
+.metric-card {
+  width: auto;
+  padding: 1rem;
+}
+
+.metric-card strong {
+  font-size: 1.7rem;
+}
+
+.admin-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1.5rem auto;
+}
+
+.admin-links a {
+  border-radius: 999px;
+  background: #eee8ff;
+  padding: 0.65rem 0.9rem;
+  color: #5b35b5;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.participant-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 1rem auto;
+}
+
+.participant-links a {
+  color: #5b35b5;
+  font-weight: 700;
+}
+
+.admin-link-button {
+  display: inline-block;
+  border-radius: 0.75rem;
+  background: #171717;
+  padding: 0.8rem 1rem;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.event-link-card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.event-link-card h2 {
+  margin: 0;
+}
+
+.participant-list {
+  width: 100%;
+}
+
+.participant-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid #ecece7;
+  padding: 0.85rem 0;
+}
+
+.participant-row p {
+  margin: 0.25rem 0 0;
+  color: #6c6c65;
+}
+
+.progress-card {
+  text-align: center;
+}
+
+.progress-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.progress-list p {
+  margin: 0;
+  border-radius: 0.75rem;
+  background: #f7f7f5;
+  padding: 0.75rem;
+}
+
 .admin-header h1,
 .submission-meta h2 {
   margin: 0;

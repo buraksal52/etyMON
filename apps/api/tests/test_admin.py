@@ -115,7 +115,13 @@ def test_organizer_can_manage_event_participants_and_tasks() -> None:
         },
     )
     assert created_event.status_code == 200
+    created_event_id = created_event.json()["event"]["id"]
     assert created_event.json()["event"]["state"] == EventState.DRAFT.value
+    published = client.patch(
+        f"/admin/events/{created_event_id}", json={"state": EventState.WAITING.value}
+    )
+    assert published.status_code == 200
+    assert published.json()["event"]["state"] == EventState.WAITING.value
 
     imported = client.post(
         f"/admin/events/{event_id}/participants/import",

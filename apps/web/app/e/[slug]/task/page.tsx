@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
 import { ProofForm } from "../../../../components/proof-form";
 import { apiRequest } from "../../../../lib/api";
@@ -20,6 +21,7 @@ type Assignment = {
 };
 
 export default function TaskPage() {
+  const params = useParams<{ slug: string }>();
   const searchParams = useSearchParams();
   const eventId = searchParams.get("eventId");
   const [assignment, setAssignment] = useState<Assignment | null>(null);
@@ -258,6 +260,17 @@ export default function TaskPage() {
         {error && <p className="error">{error}</p>}
         {message && <p className="success">{message}</p>}
       </section>
+      <nav className="participant-links">
+        <Link href={`/e/${params.slug}/progress?eventId=${eventId}`}>
+          My progress
+        </Link>
+        <Link href={`/e/${params.slug}/leaderboard?eventId=${eventId}`}>
+          Leaderboard
+        </Link>
+        <Link href={`/e/${params.slug}/reimbursement?eventId=${eventId}`}>
+          Travel reimbursement
+        </Link>
+      </nav>
     </main>
   );
 }

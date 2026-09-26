@@ -64,6 +64,7 @@ class EventUpdateRequest(BaseModel):
     registration_opens_at: datetime | None = None
     starts_at: datetime | None = None
     task_deadline_at: datetime | None = None
+    state: str | None = Field(default=None, pattern="^(DRAFT|WAITING)$")
 
 
 class TaskRequest(BaseModel):
@@ -188,6 +189,15 @@ def serialize_event(event: Event) -> dict[str, object]:
     }
 
 
+@router.get("/events")
+def list_events(
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    events = db.query(Event).order_by(Event.created_at.desc()).all()
+    return {"events": [serialize_event(event) for event in events]}
+
+
 @router.patch("/events/{event_id}")
 def update_event(
     event_id: str,
@@ -201,6 +211,10 @@ def update_event(
     if event.state not in {EventState.DRAFT.value, EventState.WAITING.value}:
         raise HTTPException(status_code=409, detail="Event cannot be edited after start")
     updates = payload.model_dump(exclude_unset=True)
+    requested_state = updates.get("state")
+    if requested_state is not None and requested_state != event.state:
+        if event.state != EventState.DRAFT.value or requested_state != EventState.WAITING.value:
+            raise HTTPException(status_code=409, detail="Invalid event state transition")
     for field, value in updates.items():
         setattr(event, field, value)
     organizer = current[1]

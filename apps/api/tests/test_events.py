@@ -77,7 +77,10 @@ def test_unknown_email_is_rejected_without_session() -> None:
 
 def test_participant_can_read_progress_counts() -> None:
     client, event_id, engine = make_client()
-    assert client.post("/events/test-event/join", json={"email": "alice@example.com"}).status_code == 200
+    assert (
+        client.post("/events/test-event/join", json={"email": "alice@example.com"}).status_code
+        == 200
+    )
 
     with Session(engine) as db:
         event_participant = db.query(EventParticipant).one()

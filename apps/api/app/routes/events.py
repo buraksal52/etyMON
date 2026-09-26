@@ -140,9 +140,7 @@ def get_progress(
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
     assignments = (
-        db.query(TaskAssignment)
-        .filter_by(event_id=event_id, participant_id=participant.id)
-        .all()
+        db.query(TaskAssignment).filter_by(event_id=event_id, participant_id=participant.id).all()
     )
     return {
         "eventId": event.id,
