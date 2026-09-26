@@ -73,12 +73,16 @@ Required for:
 
 Possible implementations:
 
+* Railway Storage Buckets (preferred for this deployment);
 * Amazon S3;
 * Supabase Storage;
 * another S3-compatible object storage provider.
 
-Storage provider must be abstracted from business logic. Railway's local
-filesystem must not be used for durable proof or reimbursement files.
+Storage provider must be abstracted from business logic. Railway Storage
+Buckets are S3-compatible and should be used for production proof images,
+receipts, and uploaded documents. Railway Volumes may be used for local or
+single-service persistent files, but must not be treated as a horizontally
+shared object store for user uploads.
 
 ---
 
@@ -438,7 +442,7 @@ Railway
   ├── PostgreSQL service
   └── optional worker service for reward settlement/retries
 
-External S3-compatible storage
+Railway Storage Bucket (S3-compatible)
   └── proof images, receipts, and uploaded documents
 ```
 
