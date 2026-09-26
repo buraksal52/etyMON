@@ -24,3 +24,4 @@ cache/
 # Local data
 postgres-data/
 storage-data/
+.vercel
