@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -84,7 +84,7 @@ def join_event(
             status_code=status.HTTP_403_FORBIDDEN, detail="Participant is not eligible"
         )
 
-    event_participant.checked_in_at = event_participant.checked_in_at or datetime.utcnow()
+    event_participant.checked_in_at = event_participant.checked_in_at or datetime.now(timezone.utc)
     db.commit()
     response.set_cookie(
         key=SESSION_COOKIE,
