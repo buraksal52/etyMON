@@ -1,0 +1,17 @@
+{
+  "name": "platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@11.12.1",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev",
+    "build:web": "npm --workspace apps/web run build",
+    "lint:web": "npm --workspace apps/web run lint",
+    "format:web": "npm --workspace apps/web run format",
+    "format:api": "apps/api/.venv/bin/ruff format apps/api",
+    "format": "npm run format:web && npm run format:api"
+  }
+}

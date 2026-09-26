@@ -1,0 +1,101 @@
+:root {
+  color-scheme: light;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f7f7f5;
+  color: #171717;
+}
+
+main {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  gap: 0.5rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.screen {
+  min-height: 100vh;
+  padding: 1.5rem;
+}
+
+.card {
+  width: min(100%, 32rem);
+  padding: 2rem;
+  border: 1px solid #deded8;
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 6%);
+}
+
+.screen .card {
+  margin: auto;
+}
+
+.eyebrow {
+  margin: 0 0 0.5rem;
+  color: #6c6c65;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+label {
+  display: block;
+  margin: 1.5rem 0 0.5rem;
+  font-weight: 700;
+}
+
+input,
+button {
+  width: 100%;
+  min-height: 3rem;
+  border-radius: 0.75rem;
+  font: inherit;
+}
+
+input {
+  border: 1px solid #c8c8c0;
+  padding: 0.75rem;
+}
+
+button {
+  margin-top: 1rem;
+  border: 0;
+  background: #171717;
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.error {
+  color: #b42318;
+}
+
+.waiting-card {
+  text-align: center;
+}
+
+.status-dot {
+  display: block;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin: 2rem auto 0;
+  border-radius: 50%;
+  background: #7f56d9;
+  box-shadow: 0 0 0 0.5rem #eee8ff;
+}

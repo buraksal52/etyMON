@@ -1,0 +1,21 @@
+node_modules/
+.next/
+out/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.python-version
+*.egg-info/
+.DS_Store
+
+# Local data
+postgres-data/
+storage-data/

@@ -805,6 +805,7 @@ POST /admin/reimbursements/:id/paid
 Minimum:
 
 ```text
+POST   /admin/login
 POST   /admin/events
 GET    /admin/events/:id
 PATCH  /admin/events/:id
