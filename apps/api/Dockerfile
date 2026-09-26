@@ -7,6 +7,7 @@ COPY apps/api/requirements.txt ./
 COPY apps/api/app ./app
 COPY apps/api/alembic.ini ./alembic.ini
 COPY apps/api/alembic ./alembic
+COPY scripts/create_admin.py ./scripts/create_admin.py
 
 RUN pip install --no-cache-dir -r requirements.txt
 
