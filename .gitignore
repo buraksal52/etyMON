@@ -16,6 +16,10 @@ __pycache__/
 *.egg-info/
 .DS_Store
 
+# Foundry deployment artifacts (may contain sensitive transaction data)
+broadcast/
+cache/
+
 # Local data
 postgres-data/
 storage-data/
