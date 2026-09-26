@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_participant
+from app.file_validation import ALLOWED_UPLOAD_TYPES, validate_file_signature
 from app.db.models import (
     AssignmentStatus,
     Event,
@@ -18,13 +19,6 @@ from app.db.session import get_db
 from app.storage import StorageProvider, get_storage_provider
 
 router = APIRouter(tags=["submissions"])
-
-ALLOWED_CONTENT_TYPES = {
-    "image/jpeg": ("jpg", 10 * 1024 * 1024),
-    "image/png": ("png", 10 * 1024 * 1024),
-    "image/webp": ("webp", 10 * 1024 * 1024),
-    "application/pdf": ("pdf", 15 * 1024 * 1024),
-}
 
 
 def validate_proof(task: Task, file: UploadFile | None, text: str | None, url: str | None) -> None:
@@ -42,19 +36,8 @@ def validate_proof(task: Task, file: UploadFile | None, text: str | None, url: s
         raise HTTPException(status_code=422, detail="Image and URL proof are required")
     if proof_type == "TEXT_OR_URL" and not (has_text or has_url):
         raise HTTPException(status_code=422, detail="Text or URL proof is required")
-    if has_file and file is not None and file.content_type not in ALLOWED_CONTENT_TYPES:
+    if has_file and file is not None and file.content_type not in ALLOWED_UPLOAD_TYPES:
         raise HTTPException(status_code=415, detail="Unsupported proof file type")
-
-
-def validate_file_signature(content: bytes, content_type: str) -> None:
-    signatures = {
-        "image/jpeg": content.startswith(b"\xff\xd8\xff"),
-        "image/png": content.startswith(b"\x89PNG\r\n\x1a\n"),
-        "image/webp": content.startswith(b"RIFF") and content[8:12] == b"WEBP",
-        "application/pdf": content.startswith(b"%PDF"),
-    }
-    if not signatures.get(content_type, False):
-        raise HTTPException(status_code=415, detail="File content does not match its MIME type")
 
 
 @router.post("/assignments/{assignment_id}/submit")
@@ -114,7 +97,7 @@ async def submit_proof(
 
     storage_key = None
     if file is not None:
-        extension, max_size = ALLOWED_CONTENT_TYPES[file.content_type]
+        extension, max_size = ALLOWED_UPLOAD_TYPES[file.content_type]
         content = await file.read(max_size + 1)
         if len(content) > max_size:
             raise HTTPException(status_code=413, detail="Proof file is too large")
