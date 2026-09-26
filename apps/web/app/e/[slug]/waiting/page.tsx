@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
+import { IdentityBuilder } from "../../../../components/identity-builder";
+
 import { apiRequest } from "../../../../lib/api";
 
 type EventStatus = {
@@ -16,6 +18,20 @@ export default function WaitingPage() {
   const eventId = searchParams.get("eventId");
   const [status, setStatus] = useState<EventStatus["state"]>("WAITING");
   const [error, setError] = useState("");
+  const [eventName, setEventName] = useState("EVENT");
+  const [verified, setVerified] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    apiRequest<{ name: string }>(`/events/${params.slug}`)
+      .then((event) => {
+        if (active) setEventName(event.name);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [params.slug]);
 
   useEffect(() => {
     if (!eventId) {
@@ -31,6 +47,8 @@ export default function WaitingPage() {
         );
         if (!active) return;
         setStatus(result.state);
+        setVerified(true);
+        setError("");
         if (result.state === "ACTIVE")
           router.push(`/e/${params.slug}/task?eventId=${eventId}`);
         if (result.state === "ENDED") router.push(`/e/${params.slug}/ended`);
@@ -53,14 +71,17 @@ export default function WaitingPage() {
   }, [eventId, params.slug, router]);
 
   return (
-    <main className="screen">
-      <section className="card waiting-card">
-        <p className="eyebrow">{status}</p>
-        <h1>You’re checked in</h1>
-        <p>Waiting for Port to start the competition.</p>
-        <span className="status-dot" aria-label="Checking event status" />
-        {error && <p className="error">{error}</p>}
-      </section>
-    </main>
+    <>
+      <div className="event-wait-status" role="status">
+        {error ||
+          `${status} — Waiting for Port to start the competition. Create your identity while you wait.`}
+      </div>
+      <IdentityBuilder
+        slug={params.slug}
+        eventId={eventId}
+        eventName={eventName}
+        checkedIn={verified}
+      />
+    </>
   );
 }

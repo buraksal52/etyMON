@@ -1,16 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-
 import { ProofForm } from "../../../../components/proof-form";
 import { apiRequest } from "../../../../lib/api";
 
 type Assignment = {
   id: string;
   status: string;
-  assignedAt?: string;
   task: {
     title: string;
     description: string;
@@ -19,258 +17,341 @@ type Assignment = {
     proofType: string;
   };
 };
+type Session = {
+  assignment: Assignment | null;
+  lastAssignment: Assignment | null;
+  missionNumber: number;
+  completed: number;
+  pythonQuestion?: string | null;
+};
+const emptySession: Session = {
+  assignment: null,
+  lastAssignment: null,
+  missionNumber: 1,
+  completed: 0,
+};
 
 export default function TaskPage() {
-  const params = useParams<{ slug: string }>();
-  const searchParams = useSearchParams();
-  const eventId = searchParams.get("eventId");
-  const [assignment, setAssignment] = useState<Assignment | null>(null);
-  const [resolvedAssignment, setResolvedAssignment] =
-    useState<Assignment | null>(null);
+  const { slug } = useParams<{ slug: string }>();
+  const eventId = useSearchParams().get("eventId");
+  const [session, setSession] = useState<Session>(emptySession);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [awaitingReview, setAwaitingReview] = useState(false);
-  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [spinning, setSpinning] = useState(false);
+  const [rotation, setRotation] = useState(0);
+  const [selected, setSelected] = useState(false);
+  const [answer, setAnswer] = useState("");
   const [error, setError] = useState("");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const locked = useRef(false);
+  const assignment = session.assignment;
+  const approved = session.lastAssignment?.status === "APPROVED";
+  const finished = session.completed >= 3;
 
   useEffect(() => {
-    if (!eventId) {
-      setError("Missing event session.");
-      setLoading(false);
-      return;
-    }
-
     let active = true;
-    async function loadTask() {
+    async function refresh(initial = false) {
+      if (!eventId) {
+        setLoading(false);
+        return;
+      }
       try {
-        const current = await apiRequest<{
-          assignment: Assignment | null;
-          lastAssignment: Assignment | null;
-        }>(`/events/${eventId}/tasks/current`);
-        if (current.assignment) {
-          if (active) {
-            setAssignment(current.assignment);
-            setResolvedAssignment(null);
-            setAwaitingReview(current.assignment.status === "SUBMITTED");
-          }
-          return;
-        }
-        if (current.lastAssignment) {
-          if (active) {
-            setAssignment(null);
-            setResolvedAssignment(current.lastAssignment);
-            setAwaitingReview(false);
-          }
-          return;
-        }
-        const next = await apiRequest<{ assignment: Assignment }>(
-          `/events/${eventId}/tasks/next`,
-          {
-            method: "POST",
-          },
+        const result = await apiRequest<Session>(
+          `/events/${eventId}/tasks/current`,
         );
         if (active) {
-          setAssignment(next.assignment);
-          setResolvedAssignment(null);
-          setAwaitingReview(false);
+          setSession(result);
+          if (initial) setError("");
         }
-      } catch (requestError) {
+      } catch (cause) {
         if (active)
           setError(
-            requestError instanceof Error
-              ? requestError.message
-              : "Unable to load task",
+            cause instanceof Error ? cause.message : "Unable to load mission.",
           );
       } finally {
         if (active) setLoading(false);
       }
     }
-
-    void loadTask();
+    void refresh(true);
+    const interval = setInterval(() => {
+      if (!locked.current) void refresh();
+    }, 4000);
     return () => {
       active = false;
+      clearInterval(interval);
+      if (timer.current) clearTimeout(timer.current);
     };
   }, [eventId]);
 
-  useEffect(() => {
-    if (!eventId || !awaitingReview) return;
-
-    let active = true;
-    const interval = window.setInterval(async () => {
-      try {
-        const current = await apiRequest<{
-          assignment: Assignment | null;
-          lastAssignment: Assignment | null;
-        }>(`/events/${eventId}/tasks/current`);
-        if (!active) return;
-        if (current.assignment) {
-          setAssignment(current.assignment);
-          if (current.assignment.status !== "SUBMITTED") {
-            setAwaitingReview(false);
-          }
-          return;
-        }
-        if (current.lastAssignment) {
-          setAssignment(null);
-          setResolvedAssignment(current.lastAssignment);
-          setAwaitingReview(false);
-        }
-      } catch (requestError) {
-        if (active) {
-          setError(
-            requestError instanceof Error
-              ? requestError.message
-              : "Unable to refresh task status",
+  async function spin() {
+    if (locked.current) return;
+    locked.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      let next: Assignment | null = null;
+      if (eventId) {
+        try {
+          const result = await apiRequest<{ assignment: Assignment }>(
+            `/events/${eventId}/tasks/next`,
+            { method: "POST", body: JSON.stringify({ answer }) },
           );
+          next = result.assignment;
+        } catch (cause) {
+          if (
+            !(cause instanceof Error) ||
+            cause.message !== "No task is currently available" ||
+            approved
+          )
+            throw cause;
         }
       }
-    }, 4000);
-
-    return () => {
-      active = false;
-      window.clearInterval(interval);
-    };
-  }, [eventId, awaitingReview]);
-
-  async function requestNextTask() {
-    if (!eventId) return;
-    setError("");
-    setMessage("");
-    setLoading(true);
-    try {
-      const next = await apiRequest<{ assignment: Assignment }>(
-        `/events/${eventId}/tasks/next`,
-        { method: "POST" },
+      setSpinning(true);
+      const number = approved ? session.missionNumber + 1 : 1;
+      setRotation(
+        (old) =>
+          old + 1440 + ((360 - (number - 1) * 120 - (old % 360) + 360) % 360),
       );
-      setAssignment(next.assignment);
-      setResolvedAssignment(null);
-      setAwaitingReview(false);
-    } catch (requestError) {
+      timer.current = setTimeout(
+        () => {
+          setSelected(true);
+          if (next)
+            setSession((old) => ({
+              ...old,
+              assignment: next,
+              lastAssignment: null,
+              missionNumber: number,
+              pythonQuestion: null,
+            }));
+          setAnswer("");
+          setSpinning(false);
+          setBusy(false);
+          locked.current = false;
+        },
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? 0
+          : 2600,
+      );
+    } catch (cause) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Unable to load next task",
+        cause instanceof Error ? cause.message : "Unable to select mission.",
       );
-    } finally {
-      setLoading(false);
+      setBusy(false);
+      locked.current = false;
     }
   }
 
-  if (loading)
-    return (
-      <main className="screen">
-        <p>Loading task…</p>
-      </main>
-    );
-  if (error)
-    return (
-      <main className="screen">
-        <section className="card">
-          <p className="error">{error}</p>
-        </section>
-      </main>
-    );
-  if (resolvedAssignment)
-    return (
-      <main className="screen">
-        <section className="card review-card">
-          <p className="eyebrow">TASK REVIEW</p>
-          <h1>
-            {resolvedAssignment.status === "APPROVED"
-              ? "Task approved"
-              : "Task rejected"}
-          </h1>
-          {resolvedAssignment.status === "APPROVED" ? (
-            <p className="success">
-              +{resolvedAssignment.task.points} points added to your score.
-            </p>
-          ) : (
-            <p>Your proof was not approved. You can try another task.</p>
-          )}
-          <button type="button" onClick={requestNextTask}>
-            Next Task
-          </button>
-          {error && <p className="error">{error}</p>}
-        </section>
-      </main>
-    );
-  if (!assignment)
-    return (
-      <main className="screen">
-        <section className="card">
-          <h1>No task available</h1>
-          <p>Check back shortly.</p>
-        </section>
-      </main>
-    );
-
-  const currentAssignment = assignment;
-  const { task } = currentAssignment;
   async function submitProof(proof: {
     file?: File;
     text?: string;
     url?: string;
   }) {
-    if (!eventId) return;
+    if (!assignment || locked.current) return;
+    locked.current = true;
+    setBusy(true);
     setError("");
-    setMessage("");
-    setSubmitting(true);
-    const formData = new FormData();
-    if (proof.file) formData.append("file", proof.file);
-    if (proof.text) formData.append("text", proof.text);
-    if (proof.url) formData.append("url", proof.url);
+    const body = new FormData();
+    if (proof.file) body.append("file", proof.file);
+    if (proof.text) body.append("text", proof.text);
+    if (proof.url) body.append("url", proof.url);
     try {
-      await apiRequest(`/assignments/${currentAssignment.id}/submit`, {
+      await apiRequest(`/assignments/${assignment.id}/submit`, {
         method: "POST",
-        body: formData,
+        body,
       });
-      setAssignment({ ...currentAssignment, status: "SUBMITTED" });
-      setAwaitingReview(true);
-      setMessage("Proof submitted. Waiting for organizer review.");
-    } catch (requestError) {
+      setSession((old) => ({
+        ...old,
+        assignment: { ...assignment, status: "SUBMITTED" },
+      }));
+    } catch (cause) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Unable to submit proof",
+        cause instanceof Error ? cause.message : "Unable to submit proof.",
       );
     } finally {
-      setSubmitting(false);
+      setBusy(false);
+      locked.current = false;
     }
   }
 
   return (
-    <main className="screen">
-      <section className="card task-card">
-        <p className="eyebrow">ACTIVE TASK</p>
-        <div className="task-heading">
-          <h1>{task.title}</h1>
-          <span className="points">+{task.points} pts</span>
+    <main className="mission-terminal">
+      <header className="mission-hero">
+        <div>
+          <h1>
+            SPIN.
+            <br />
+            <span>UNLOCK.</span>
+          </h1>
+          <p>Three missions. One at a time.</p>
         </div>
-        <p>{task.description}</p>
-        <div className="instructions">
-          <strong>Instructions</strong>
-          <p>{task.instructions}</p>
-        </div>
-        <p className="proof-type">Required proof: {task.proofType}</p>
-        <ProofForm
-          proofType={task.proofType}
-          onSubmit={submitProof}
-          disabled={submitting || currentAssignment.status !== "ASSIGNED"}
-        />
-        {error && <p className="error">{error}</p>}
-        {message && <p className="success">{message}</p>}
-      </section>
-      <nav className="participant-links">
-        <Link href={`/e/${params.slug}/progress?eventId=${eventId}`}>
-          My progress
-        </Link>
-        <Link href={`/e/${params.slug}/leaderboard?eventId=${eventId}`}>
-          Leaderboard
-        </Link>
-        <Link href={`/e/${params.slug}/reimbursement?eventId=${eventId}`}>
-          Travel reimbursement
-        </Link>
-      </nav>
+        <ol className="mission-steps" aria-label="Mission progress">
+          {[1, 2, 3].map((number) => (
+            <li
+              key={number}
+              aria-current={
+                number === session.missionNumber ? "step" : undefined
+              }
+              className={number <= session.completed ? "is-complete" : ""}
+            >
+              {number <= session.completed ? "✓" : `0${number}`}
+            </li>
+          ))}
+        </ol>
+      </header>
+      <div className="mission-grid">
+        <section
+          className="mission-panel selector-panel"
+          aria-label="Task selector"
+        >
+          <div className="mission-wheel-wrap">
+            <div
+              className="mission-wheel"
+              role="img"
+              aria-label="Mission wheel with three numbered sectors"
+              style={{ transform: `rotate(${rotation}deg)` }}
+            />
+          </div>
+          <button
+            onClick={() => void spin()}
+            disabled={
+              loading || busy || !!assignment || !!session.lastAssignment
+            }
+          >
+            {spinning
+              ? "SELECTING…"
+              : assignment || session.lastAssignment
+                ? "MISSION SELECTED"
+                : "SPIN THE WHEEL ↗"}
+          </button>
+          <p className="mission-hint">
+            Complete your mission. Solve Python. Unlock the next.
+          </p>
+        </section>
+        <section
+          className="mission-panel"
+          aria-live="polite"
+          aria-busy={loading || busy}
+        >
+          <div className="mission-panel-title">
+            <span>YOUR CURRENT MISSION</span>
+            <span>0{session.missionNumber} / 03</span>
+          </div>
+          {loading ? (
+            <h2>Loading mission…</h2>
+          ) : finished ? (
+            <>
+              <p className="mission-kicker">03 / 03 COMPLETE</p>
+              <h2>All missions complete.</h2>
+              <p>You made it through all three missions.</p>
+            </>
+          ) : assignment ? (
+            <>
+              <p className="mission-kicker">
+                TASK 0{session.missionNumber} · +{assignment.task.points} PTS
+              </p>
+              <h2>{assignment.task.title}</h2>
+              <p>{assignment.task.description}</p>
+              <p className="mission-instructions">
+                {assignment.task.instructions}
+              </p>
+              {assignment.status === "SUBMITTED" ? (
+                <p className="mission-notice">
+                  Proof submitted. Waiting for organizer approval.
+                </p>
+              ) : (
+                <ProofForm
+                  key={assignment.id}
+                  proofType={assignment.task.proofType}
+                  onSubmit={submitProof}
+                  disabled={busy}
+                />
+              )}
+            </>
+          ) : approved ? (
+            <>
+              <p className="mission-kicker">TASK APPROVED ✓</p>
+              <h2>Unlock mission 0{session.missionNumber + 1}.</h2>
+              <p>Solve a Python question to continue.</p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void spin();
+                }}
+              >
+                <label htmlFor="python-answer">PYTHON // ACCESS CHECK</label>
+                <pre className="mission-code">
+                  {session.pythonQuestion || "Python question coming soon."}
+                </pre>
+                <textarea
+                  id="python-answer"
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  disabled={!session.pythonQuestion || busy}
+                  placeholder="Your answer"
+                  required
+                  maxLength={2000}
+                />
+                <button
+                  disabled={!session.pythonQuestion || busy || !answer.trim()}
+                >
+                  {spinning ? "UNLOCKING…" : "CHECK ANSWER & UNLOCK →"}
+                </button>
+              </form>
+            </>
+          ) : session.lastAssignment ? (
+            <>
+              <p className="mission-kicker">MISSION LOCKED</p>
+              <h2>
+                {session.lastAssignment.status === "REJECTED"
+                  ? "Proof not approved."
+                  : "Mission expired."}
+              </h2>
+              <p>
+                The next mission stays locked. Contact the organizer for review.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mission-kicker">TASK 01</p>
+              <h2>
+                {selected ? "Mission details coming soon." : "Your first move."}
+              </h2>
+              <p>
+                {selected
+                  ? "The organizer will add the task here."
+                  : "Spin the wheel to reveal your first mission."}
+              </p>
+              <fieldset disabled className="mission-placeholder">
+                <label htmlFor="future-proof">UPLOAD YOUR PROOF</label>
+                <input id="future-proof" type="file" />
+                <p className="mission-hint">
+                  Proof submission opens when a mission is available.
+                </p>
+                <button>SUBMIT PROOF</button>
+              </fieldset>
+            </>
+          )}
+          {error && (
+            <p role="alert" className="error">
+              {error}
+            </p>
+          )}
+        </section>
+      </div>
+      {eventId && (
+        <nav className="mission-links">
+          <Link
+            href={`/e/${slug}/progress?eventId=${encodeURIComponent(eventId)}`}
+          >
+            My progress ↗
+          </Link>
+          <Link
+            href={`/e/${slug}/leaderboard?eventId=${encodeURIComponent(eventId)}`}
+          >
+            Leaderboard ↗
+          </Link>
+        </nav>
+      )}
     </main>
   );
 }

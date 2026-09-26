@@ -51,6 +51,10 @@ def make_task_client() -> tuple[TestClient, str, str, object]:
                     points=10,
                     proof_type="IMAGE",
                     assignment_weight=1,
+                    metadata_json={
+                        "missionStage": 1,
+                        "pythonGate": {"prompt": "Test prompt", "answers": ["test answer"]},
+                    },
                 ),
                 Task(
                     event_id=event.id,
@@ -60,6 +64,7 @@ def make_task_client() -> tuple[TestClient, str, str, object]:
                     points=20,
                     proof_type="URL",
                     assignment_weight=3,
+                    metadata_json={"missionStage": 2},
                 ),
                 Task(
                     event_id=event.id,
@@ -112,7 +117,13 @@ def test_next_task_respects_current_assignment_and_candidate_rules() -> None:
     assert resolved.json()["lastAssignment"]["id"] == first_assignment["id"]
     assert resolved.json()["lastAssignment"]["status"] == AssignmentStatus.APPROVED.value
 
-    second = client.post(f"/events/{event_id}/tasks/next")
+    assert client.post(f"/events/{event_id}/tasks/next").status_code == 422
+    assert (
+        client.post(f"/events/{event_id}/tasks/next", json={"answer": "wrong"}).status_code == 422
+    )
+    assert "pythonGate" not in first_assignment["task"]["metadata"]
+    assert resolved.json()["pythonQuestion"] == "Test prompt"
+    second = client.post(f"/events/{event_id}/tasks/next", json={"answer": "test answer"})
     assert second.status_code == 200
     assert second.json()["assignment"]["task"]["title"] != first_assignment["task"]["title"]
     assert second.json()["assignment"]["task"]["title"] != "Future Task"
@@ -130,3 +141,40 @@ def test_task_request_rejects_after_deadline() -> None:
     response = client.post(f"/events/{event_id}/tasks/next")
 
     assert response.status_code == 409
+
+
+def test_rejected_mission_cannot_unlock_next() -> None:
+    client, event_id, _, engine = make_task_client()
+    first = client.post(f"/events/{event_id}/tasks/next").json()["assignment"]
+    with Session(engine) as db:
+        db.get(TaskAssignment, first["id"]).status = AssignmentStatus.REJECTED.value
+        db.commit()
+    assert (
+        client.post(f"/events/{event_id}/tasks/next", json={"answer": "test answer"}).status_code
+        == 409
+    )
+
+
+def test_empty_gate_and_three_mission_limit() -> None:
+    client, event_id, participant_id, engine = make_task_client()
+    first = client.post(f"/events/{event_id}/tasks/next").json()["assignment"]
+    with Session(engine) as db:
+        assignment = db.get(TaskAssignment, first["id"])
+        assignment.status = AssignmentStatus.APPROVED.value
+        task = db.get(Task, assignment.task_id)
+        task.metadata_json = {"missionStage": 1}
+        db.commit()
+    assert client.post(f"/events/{event_id}/tasks/next", json={"answer": ""}).status_code == 409
+    with Session(engine) as db:
+        for _ in range(2):
+            db.add(
+                TaskAssignment(
+                    event_id=event_id,
+                    participant_id=participant_id,
+                    task_id=first["task"]["id"],
+                    status="APPROVED",
+                )
+            )
+        db.commit()
+    assert client.get(f"/events/{event_id}/tasks/current").json()["completed"] == 3
+    assert client.post(f"/events/{event_id}/tasks/next").status_code == 409

@@ -63,6 +63,10 @@ def make_acceptance_clients() -> tuple[TestClient, TestClient, str, object, Fake
                 Task(
                     event_id=event.id,
                     title="First task",
+                    metadata_json={
+                        "missionStage": 1,
+                        "pythonGate": {"prompt": "Test gate", "answers": ["ok"]},
+                    },
                     description="First task",
                     instructions="Upload a photo",
                     points=25,
@@ -72,6 +76,7 @@ def make_acceptance_clients() -> tuple[TestClient, TestClient, str, object, Fake
                 Task(
                     event_id=event.id,
                     title="Second task",
+                    metadata_json={"missionStage": 2},
                     description="Second task",
                     instructions="Upload a photo",
                     points=15,
@@ -152,7 +157,7 @@ def test_e2e_acceptance_flow() -> None:
         assert leaderboard.status_code == 200
         assert leaderboard.json()["leaderboard"][0]["score"] in {15, 25}
 
-        next_task = participant.post(f"/events/{event_id}/tasks/next")
+        next_task = participant.post(f"/events/{event_id}/tasks/next", json={"answer": "ok"})
         assert next_task.status_code == 200
         assert next_task.json()["assignment"]["id"] != assignment["id"]
 

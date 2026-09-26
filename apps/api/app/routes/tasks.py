@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import random
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_participant
@@ -17,6 +18,10 @@ from app.db.session import get_db
 
 router = APIRouter(prefix="/events/{event_id}/tasks", tags=["tasks"])
 UNRESOLVED_STATUSES = (AssignmentStatus.ASSIGNED.value, AssignmentStatus.SUBMITTED.value)
+
+
+class NextTaskRequest(BaseModel):
+    answer: str = Field(default="", max_length=2000)
 
 
 def timestamp(value: datetime) -> float:
@@ -39,7 +44,7 @@ def serialize_assignment(assignment: TaskAssignment, task: Task) -> dict[str, ob
             "proofType": task.proof_type,
             "startsAt": task.starts_at,
             "expiresAt": task.expires_at,
-            "metadata": task.metadata_json,
+            "metadata": {k: v for k, v in (task.metadata_json or {}).items() if k != "pythonGate"},
         },
     }
 
@@ -47,6 +52,7 @@ def serialize_assignment(assignment: TaskAssignment, task: Task) -> dict[str, ob
 @router.post("/next")
 def assign_next_task(
     event_id: str,
+    payload: NextTaskRequest | None = None,
     current=Depends(get_current_participant),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
@@ -85,6 +91,20 @@ def assign_next_task(
             detail="Participant already has an unresolved task",
         )
 
+    if len(assignments) >= 3:
+        raise HTTPException(status_code=409, detail="All three missions have been assigned")
+    if assignments:
+        latest = max(assignments, key=lambda item: timestamp(item.assigned_at))
+        if latest.status != AssignmentStatus.APPROVED.value:
+            raise HTTPException(status_code=409, detail="Your previous mission must be approved")
+        previous_task = db.get(Task, latest.task_id)
+        gate = (previous_task.metadata_json or {}).get("pythonGate", {})
+        answers = gate.get("answers", [])
+        if not gate.get("prompt") or not answers:
+            raise HTTPException(status_code=409, detail="Python question coming soon")
+        if payload is None or payload.answer.strip() not in answers:
+            raise HTTPException(status_code=422, detail="Incorrect answer. Try again.")
+
     assigned_task_ids = {assignment.task_id for assignment in assignments}
     assignment_counts: dict[str, int] = {}
     for assignment in assignments:
@@ -92,6 +112,8 @@ def assign_next_task(
 
     candidates = []
     for task in db.query(Task).filter_by(event_id=event_id, active=True).all():
+        if (task.metadata_json or {}).get("missionStage") != len(assignments) + 1:
+            continue
         if task.id in assigned_task_ids:
             continue
         if task.starts_at is not None and timestamp(task.starts_at) > timestamp(now):
@@ -137,6 +159,15 @@ def get_current_task(
     session, _, _ = current
     if session.event_id != event_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Event session mismatch")
+    history = (
+        db.query(TaskAssignment)
+        .filter_by(event_id=event_id, participant_id=session.participant_id)
+        .all()
+    )
+    progress = {
+        "missionNumber": min(3, max(1, len(history))),
+        "completed": sum(a.status == AssignmentStatus.APPROVED.value for a in history),
+    }
     assignment = (
         db.query(TaskAssignment)
         .filter(
@@ -158,7 +189,7 @@ def get_current_task(
     )
     if assignment is None:
         if latest_assignment is None:
-            return {"assignment": None, "lastAssignment": None}
+            return {"assignment": None, "lastAssignment": None, **progress}
         latest_task = db.get(Task, latest_assignment.task_id)
         if latest_task is None:
             raise HTTPException(
@@ -166,12 +197,20 @@ def get_current_task(
                 detail="Assigned task not found",
             )
         return {
+            **progress,
             "assignment": None,
             "lastAssignment": serialize_assignment(latest_assignment, latest_task),
+            "pythonQuestion": (latest_task.metadata_json or {}).get("pythonGate", {}).get("prompt")
+            if latest_assignment.status == AssignmentStatus.APPROVED.value and len(history) < 3
+            else None,
         }
     task = db.get(Task, assignment.task_id)
     if task is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Assigned task not found"
         )
-    return {"assignment": serialize_assignment(assignment, task), "lastAssignment": None}
+    return {
+        "assignment": serialize_assignment(assignment, task),
+        "lastAssignment": None,
+        **progress,
+    }

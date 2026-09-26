@@ -6,11 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "format": "prettier --write 'app/**/*.{ts,tsx,css}' 'components/**/*.{ts,tsx}' 'lib/**/*.{ts,tsx}' 'next.config.ts' 'eslint.config.mjs' '*.json'"
   },
   "dependencies": {
+    "html-to-image": "^1.11.13",
     "next": "^15.5.0",
+    "qr-scanner": "^1.4.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

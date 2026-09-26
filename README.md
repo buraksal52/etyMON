@@ -51,6 +51,14 @@ npm run dev:web
 
 Health check: `http://localhost:8000/health`.
 
+For a local UI demo without Docker/PostgreSQL, install the Python requirements
+above, then run `bash scripts/dev-api.sh` alongside `npm run dev:web`.
+This creates a persistent SQLite demo database in the ignored `storage-data/`
+directory and seeds the Monad Hackathon event. Enter `admin123` on `/room`,
+then use `participant1@example.com` (through `participant10@example.com`) to
+join. This helper is only for local development; deployed environments use
+PostgreSQL and migrations.
+
 The Next.js app is intended for Vercel. The FastAPI app and PostgreSQL run on
 Railway in deployed environments. Railway runs the Alembic migration as a
 pre-deploy command. The seed command only reports current database counts; it

@@ -31,15 +31,28 @@ export default function ParticipantLeaderboardPage() {
   }, [eventId, params.slug]);
 
   return (
-    <main className="screen">
-      <section className="card leaderboard-card">
-        <p className="eyebrow">Progress</p>
-        <h1>Leaderboard</h1>
-        {error ? (
-          <p className="error">{error}</p>
-        ) : (
-          <LeaderboardTable rows={rows} />
-        )}
+    <main className="screen leaderboard-screen">
+      <section className="card leaderboard-card leaderboard-terminal">
+        <header className="leaderboard-titlebar">
+          <span className="leaderboard-prompt" aria-hidden="true">
+            &gt;_
+          </span>
+          <span>leaderboard.txt</span>
+          <span className="leaderboard-window-icons" aria-hidden="true">
+            − □ ×
+          </span>
+        </header>
+        <div className="leaderboard-terminal-content">
+          <h1>
+            <span>Progress</span>
+            <em>Leaderboard.</em>
+          </h1>
+          {error ? (
+            <p className="error">{error}</p>
+          ) : (
+            <LeaderboardTable rows={rows} />
+          )}
+        </div>
       </section>
     </main>
   );
