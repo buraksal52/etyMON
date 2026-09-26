@@ -8,6 +8,8 @@ from app.settings import settings
 class StorageProvider(Protocol):
     def put_bytes(self, key: str, content: bytes, content_type: str) -> None: ...
 
+    def get_download_url(self, key: str, expires_in: int = 900) -> str: ...
+
 
 class S3StorageProvider:
     def __init__(self) -> None:
@@ -27,6 +29,15 @@ class S3StorageProvider:
             Key=key,
             Body=content,
             ContentType=content_type,
+        )
+
+    def get_download_url(self, key: str, expires_in: int = 900) -> str:
+        if not self.bucket:
+            raise RuntimeError("STORAGE_BUCKET is not configured")
+        return self.client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": key},
+            ExpiresIn=expires_in,
         )
 
 

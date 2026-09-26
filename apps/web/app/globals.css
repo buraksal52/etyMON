@@ -145,6 +145,61 @@ button:disabled {
   color: #067647;
 }
 
+.admin-screen {
+  display: block;
+  width: min(100%, 54rem);
+}
+
+.admin-header,
+.submission-meta,
+.review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-header {
+  margin: 0 auto 1.5rem;
+}
+
+.admin-header h1,
+.submission-meta h2 {
+  margin: 0;
+}
+
+.admin-header button,
+.review-actions button {
+  width: auto;
+  padding: 0 1rem;
+}
+
+.submission-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.submission-card {
+  width: 100%;
+}
+
+.submission-card > p {
+  color: #6c6c65;
+}
+
+.proof-value {
+  overflow-wrap: anywhere;
+  border-radius: 0.5rem;
+  background: #f7f7f5;
+  padding: 0.75rem;
+}
+
+.secondary-button {
+  background: #fff;
+  color: #171717;
+  box-shadow: inset 0 0 0 1px #c8c8c0;
+}
+
 .status-dot {
   display: block;
   width: 0.75rem;
