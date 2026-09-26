@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">etyMON — The room is waiting for you</title>
+  <desc id="desc">A black and neon green event QR visual for etyMON.</desc>
+  <rect width="1600" height="900" fill="#020202"/>
+  <g fill="none" stroke="#00ff2f" stroke-width="3" opacity=".72">
+    <rect x="870" y="90" width="420" height="310"/><rect x="1010" y="170" width="420" height="310"/>
+    <rect x="760" y="260" width="460" height="320"/><rect x="910" y="390" width="470" height="310"/>
+    <path d="M840 130h50m-50 20h100m-70 190h260m-370 80h190m-70 35h300"/>
+  </g>
+  <g fill="#00ff2f" opacity=".7" font-family="monospace" font-size="14">
+    <text x="900" y="125">0x000000</text><text x="1040" y="205">0x000000</text>
+    <text x="790" y="295">0x000000</text><text x="940" y="425">0x000000</text>
+    <text x="860" y="180">010101 001100 011010</text><text x="1090" y="255">101010 110010 001101</text>
+    <text x="800" y="350">001101 010011 101010</text><text x="970" y="480">110010 001101 010011</text>
+  </g>
+  <g fill="#fff" font-family="Arial, sans-serif" font-weight="800">
+    <text x="60" y="315" font-size="108">THE ROOM</text>
+    <text x="60" y="425" font-size="108">IS WAITING</text>
+    <text x="60" y="535" font-size="108">FOR YOU.</text>
+  </g>
+  <g fill="#00ff2f" font-family="monospace">
+    <rect x="60" y="62" width="42" height="42"/><path d="M70 73h22v22H70z" fill="#020202"/>
+    <text x="125" y="95" fill="#fff" font-size="28" letter-spacing="5">etyMON</text>
+    <text x="60" y="615" font-size="22" fill="#fff">Monad Hackathon · Access opens when the organizer starts the event.</text>
+    <text x="60" y="670" font-size="18">01 SCAN  /  02 VERIFY EMAIL  /  03 ENTER</text>
+  </g>
+  <g transform="translate(1000 390)" fill="none" stroke="#00ff2f" stroke-width="6">
+    <path d="M0 42V0h42M298 42V0h-42M0 258v42h42M298 258v42h-42"/>
+    <rect x="70" y="70" width="158" height="158" stroke-width="2" opacity=".5"/>
+    <path d="M84 84h45v45H84zm85 0h45v45h-45zm-85 85h45v45H84zm85 20h20m-20-35h35" stroke-width="7"/>
+    <text x="82" y="350" stroke="none" fill="#00ff2f" font-family="monospace" font-size="15">SCAN THE QR AT THE VENUE</text>
+  </g>
+</svg>

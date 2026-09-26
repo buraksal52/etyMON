@@ -1,179 +1,405 @@
-# Platform
+# etyMON
 
-Platform is a mobile-first hackathon participation platform for Monad events.
+![etyMON — The room is waiting for you](docs/assets/etyMON-hero.svg)
 
-## Architecture
+> QR veya event code ile katıl. Bekleme kuyruğuna gir. Organizer event'i
+> başlattığında rastgele task'ını al.
 
-```text
-Vercel (Next.js participant/admin web app)
-                  |
-                  v
-Railway (FastAPI API) ---- Railway PostgreSQL
-                  |
-                  +---- Railway Storage Bucket (S3-compatible proofs/receipts)
-                  |
-                  +---- Monad RewardPool (optional reward settlement)
+etyMON; organizer'ların event oluşturduğu, task havuzu hazırladığı ve
+katılımcıların QR kod veya event code ile canlı event akışına katıldığı,
+mobile-first bir platformdur.
+
+## İçindekiler
+
+- [Ürün akışı](#ürün-akışı)
+- [Admin ve katılımcı farkı](#admin-ve-katılımcı-farkı)
+- [Mimari](#mimari)
+- [Local kurulum](#local-kurulum)
+- [Canlı demo](#canlı-demo)
+- [Route haritası](#route-haritası)
+- [API özeti](#api-özeti)
+- [Vercel ve Railway deploy](#vercel-ve-railway-deploy)
+- [Monad ödül altyapısı](#monad-ödül-altyapısı)
+- [Test ve güvenlik](#test-ve-güvenlik)
+- [Dokümantasyon](#dokümantasyon)
+
+## Ürün akışı
+
+```mermaid
+flowchart TD
+    A[Admin login] --> B[Event oluştur]
+    B --> C[Task havuzu oluştur]
+    C --> D[Publish: DRAFT → WAITING]
+    D --> E[QR + event code paylaş]
+    E --> F[Katılımcı QR tarar veya code girer]
+    F --> G[Email ile join]
+    G --> H[Waiting queue]
+    H --> I{Admin Start?}
+    I -- Hayır --> H
+    I -- Evet --> J[ACTIVE]
+    J --> K[Weighted random task]
+    K --> L[Proof gönder]
+    L --> M[Admin review]
+    M --> N[Approve / Reject]
+    N --> O[Skor + leaderboard]
+    O --> P[Event End]
 ```
 
-The browser calls FastAPI through `NEXT_PUBLIC_API_URL`. FastAPI owns
-authentication, event state, task assignment, proof and receipt uploads,
-organizer review, scoring, leaderboard data, and the optional Monad settlement
-adapter.
+Temel kurallar:
 
-## Phase 0 local setup
+- Katılımcı önceden oluşturulmaz; ilk join sırasında kayıt edilir.
+- QR ve event code aynı event slug'ını çözer.
+- Yeni katılım yalnızca `WAITING` durumunda açıktır.
+- Task alma yalnızca `ACTIVE` durumunda açıktır.
+- Task seçimi backend tarafından weighted random yapılır.
+- CSV import veya mock participant/event/task yoktur.
 
-Prerequisites: Node.js 24+, Python 3.12+, and Docker.
+## Admin ve katılımcı farkı
+
+```mermaid
+flowchart LR
+    subgraph ADMIN[Organizer / Admin]
+        A1[Login] --> A2[Event oluştur] --> A3[Task havuzu]
+        A3 --> A4[QR + code] --> A5[Canlı sayaç] --> A6[Start / End]
+        A6 --> A7[Proof review] --> A8[Leaderboard / reimbursement]
+    end
+    subgraph USER[Participant]
+        P1[QR tara veya code gir] --> P2[Email ile katıl]
+        P2 --> P3[Waiting] --> P4[Random task] --> P5[Proof gönder]
+        P5 --> P6[Progress / leaderboard]
+    end
+    A4 -. paylaşır .-> P1
+    A6 -. event başlar .-> P4
+    P5 -. submission .-> A7
+```
+
+| Admin | Katılımcı |
+|---|---|
+| Event ve task havuzu oluşturur | QR veya event code ile girer |
+| Event'i publish eder | Email ile kuyruğa katılır |
+| QR/code paylaşır | Event başlayana kadar bekler |
+| Sayaçları izler | Backend'in atadığı task'ı yapar |
+| Event'i başlatır/bitirir | Proof gönderir |
+| Submission ve masraf inceler | Progress ve leaderboard görür |
+
+## Mimari
+
+```mermaid
+flowchart TB
+    B[Browser: Next.js] --> V[Vercel]
+    B --> API[FastAPI API]
+    API --> R[Railway]
+    R --> DB[(Railway PostgreSQL)]
+    API --> S[(S3-compatible Storage)]
+    API -. opsiyonel reward .-> M[(Monad RewardPool)]
+```
+
+| Katman | Teknoloji | Sorumluluk |
+|---|---|---|
+| Web | Next.js, React, TypeScript | Admin ve participant ekranları |
+| API | FastAPI, Python | Auth, event state, task, proof, review |
+| Database | PostgreSQL, SQLAlchemy, Alembic | Kalıcı domain verisi |
+| Storage | S3-compatible provider | Proof ve receipt dosyaları |
+| Blockchain | Solidity, Foundry, Web3.py | Opsiyonel native MON ödülü |
+| Hosting | Vercel + Railway | Web, API, DB ve storage |
+
+## Local kurulum
+
+### Gereksinimler
+
+- Node.js 24+
+- npm 11+
+- Python 3.12+
+- Docker Desktop
+- Foundry — yalnız Monad contract işlemleri için
+
+### Kurulum
 
 ```bash
+git clone https://github.com/buraksal52/etyMON.git
+cd etyMON
 npm install
 docker compose up -d postgres
 python3 -m venv apps/api/.venv
 source apps/api/.venv/bin/activate
 pip install -r apps/api/requirements.txt
+cp .env.example .env
 ./scripts/migrate.sh
-python apps/api/seed.py
-
-# Create a real local organizer; the command prompts for a password.
-python scripts/create_admin.py --email admin@example.com --name "Event Admin"
 ```
 
-Start the API:
+`.env` için local temel değerler:
+
+```env
+APP_ENV=development
+APP_URL=http://localhost:3000
+ALLOWED_ORIGINS=http://localhost:3000
+DATABASE_URL=postgresql+psycopg://platform:platform@localhost:5432/platform
+NEXT_PUBLIC_API_URL=http://localhost:8000
+STORAGE_PROVIDER=local
+```
+
+Seed komutu demo veri eklemez; yalnızca mevcut sayıları raporlar:
+
+```bash
+apps/api/.venv/bin/python apps/api/seed.py
+```
+
+### Gerçek admin oluşturma
+
+```bash
+python scripts/create_admin.py \
+  --email admin@example.com \
+  --name "Event Admin"
+```
+
+Komut password'u terminalde sorar. Admin hesabı seed ile oluşturulmaz.
+
+### Servisleri başlatma
+
+API terminali:
 
 ```bash
 uvicorn app.main:app --app-dir apps/api --reload --port 8000
 ```
 
-Start the frontend in another terminal:
+Web terminali:
 
 ```bash
 npm run dev:web
 ```
 
-Health check: `http://localhost:8000/health`.
-
-For a local UI demo without Docker/PostgreSQL, install the Python requirements
-above, then run `bash scripts/dev-api.sh` alongside `npm run dev:web`.
-This creates a persistent SQLite demo database in the ignored `storage-data/`
-directory and seeds the Monad Hackathon event. Enter `admin123` on `/room`,
-then use `participant1@example.com` (through `participant10@example.com`) to
-join. This helper is only for local development; deployed environments use
-PostgreSQL and migrations.
-
-The Next.js app is intended for Vercel. The FastAPI app and PostgreSQL run on
-Railway in deployed environments. Railway runs the Alembic migration as a
-pre-deploy command. The seed command only reports current database counts; it
-does not create demo events, participants, tasks, or organizer credentials.
-
-```bash
-DATABASE_URL=postgresql+psycopg://platform:platform@localhost:5432/platform \
-  apps/api/.venv/bin/python apps/api/seed.py
-```
-
-Without a `.env` file, development uses the private local filesystem provider
-under `storage-data/` for proof and receipt uploads. Production must set
-`STORAGE_PROVIDER=railway` and the Railway Storage Bucket credentials from
-`.env.example`.
-
-Authentication and the event flows are implemented in later phases described
-in `docs/`.
-
-Participants enter through the QR URL `/e/:slug` or by typing the event code,
-which is the event slug. Both methods create the participant record on first
-join, then place the participant in the waiting queue. The organizer starts
-the event after participants reach the waiting screen.
-
-State-changing browser requests are checked against the configured allowed
-origins. Login and participant-join endpoints also have an in-memory MVP rate
-limit; for multiple Railway API instances, replace it with a shared Redis- or
-database-backed limiter.
-
-## Environment variables
-
-Copy `.env.example` for local development. In production configure at least:
-
-- FastAPI: `APP_ENV`, `APP_URL`, `ALLOWED_ORIGINS`, `SESSION_SECRET`, and
-  `DATABASE_URL`.
-- Vercel: `NEXT_PUBLIC_API_URL=/api` and `API_PROXY_TARGET` set to the public
-  Railway API URL. Next.js proxies `/api/*` to FastAPI so session cookies stay
-  first-party (Safari and other browsers block cross-site API cookies).
-- Railway Storage: `STORAGE_PROVIDER=railway`, `STORAGE_BUCKET`,
-  `STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`, and `STORAGE_SECRET_KEY`.
-- Rewards, only when enabled: `MONAD_RPC_URL`, `MONAD_CHAIN_ID`,
-  `REWARD_POOL_CONTRACT_ADDRESS`, and `REWARD_SIGNER_PRIVATE_KEY`.
-
-Do not commit real secrets. `ALLOWED_ORIGINS` must include the Vercel production
-origin (and any intentionally used preview origin).
-
-## Deployment
-
-### Vercel frontend
-
-1. Import the repository into Vercel and select the `apps/web` workspace, or
-   keep the repository root and use the committed `vercel.json`.
-2. Set `NEXT_PUBLIC_API_URL=/api` and `API_PROXY_TARGET` to the deployed
-   Railway API URL.
-3. Deploy. The configured build command is `npm run build`.
-
-### Railway API and database
-
-1. Create a Railway PostgreSQL service and an API service from this repository.
-2. Keep the repository root as the service root so `railway.toml` and the
-   `apps/api/Dockerfile` are used.
-3. Set the FastAPI, database, storage, and allowed-origin variables listed
-   above. Railway supplies `PORT`; the committed start command binds FastAPI
-   to it.
-4. Deploy. `railway.toml` runs `alembic -c alembic.ini upgrade head` before
-   starting the API and exposes `/health` for the health check.
-5. Create the first organizer with `scripts/create_admin.py`, then create the
-   event and task pool from the admin flow. No demo data is inserted.
-
-### Demo walkthrough
-
-1. Sign in at `/admin`, create an event, add its task pool, and publish it.
-2. Use the event dashboard's QR code or event code to join from `/e/<event-slug>`
-   with a participant email and verify the waiting screen.
-3. Watch the waiting count update, then start the event and verify that the
-   participant gets a randomly assigned task.
-4. Submit an allowed image proof, approve it from the submissions screen, and
-   verify the score and leaderboard.
-5. Request the next task, upload a travel receipt, approve it, and mark it
-   paid from the reimbursement screen.
-6. End the event and verify that a new task request is rejected.
-
-## Admin routes
-
-After signing in, the organizer dashboard is available at `/admin`. It
-supports event creation/configuration, publishing and event controls,
-live participant queue, task management, proof review, leaderboard review,
-and travel reimbursement review.
-
-Participant progress and travel reimbursement pages are available under the
-event routes with the participant `eventId` query parameter:
+Kontroller:
 
 ```text
-/e/:slug/progress?eventId=...
-/e/:slug/reimbursement?eventId=...
+API health: http://localhost:8000/health
+Admin:      http://localhost:3000/admin/login
+Code giriş: http://localhost:3000/e
 ```
 
-## RewardPool contract
+## Canlı demo rehberi
 
-The Monad-compatible native-token contract lives in
-`packages/contracts`. Run its local tests with:
+### Admin adımları
+
+1. `/admin/login` üzerinden giriş yap.
+2. `Create event` ile event oluştur.
+3. Event name, küçük harfli slug, timezone ve task deadline gir.
+4. `Tasks` ekranından task havuzunu oluştur.
+5. `Publish` seç. Event durumu `WAITING` olur.
+6. Dashboard'daki QR kodu veya event code'u paylaş.
+7. Waiting ve joined participant sayaçlarını izle.
+8. Hazır olduğunda `Start` seç. Event durumu `ACTIVE` olur.
+9. Submission geldikçe `Submissions` ekranından incele.
+10. Approve veya reject kararı ver.
+11. Event sonunda `End` seç.
+
+### Katılımcı adımları
+
+1. QR kodu tara veya `/e` sayfasını aç.
+2. Organizer'ın verdiği event code'u yaz.
+3. Event ekranında email adresini gir.
+4. `Join event` seçeneğine bas.
+5. Event başlayana kadar waiting ekranında kal.
+6. Admin Start'a bastığında task ekranına geç.
+7. Task'ı tamamla ve proof gönder.
+8. Progress ve leaderboard ekranlarından durumunu takip et.
+
+Geçerli event code örneği:
+
+```text
+bltz-istanbul
+```
+
+Slug yalnızca küçük harf, rakam ve tire içermelidir. `bltz istanbul` geçerli
+değildir.
+
+## Route haritası
+
+### Participant route'ları
+
+```text
+/                         Landing
+/e                        Event code girişi
+/e/[slug]                 Email ile event girişi
+/e/[slug]/waiting         Bekleme ekranı
+/e/[slug]/task            Aktif task ve proof
+/e/[slug]/progress        Participant progress
+/e/[slug]/leaderboard     Participant leaderboard
+/e/[slug]/reimbursement   Masraf gönderimi
+/e/[slug]/ended           Event sonu
+```
+
+### Admin route'ları
+
+```text
+/admin                            Event listesi
+/admin/login                      Admin login
+/admin/events/new                 Event oluşturma
+/admin/events/[id]                Event dashboard
+/admin/events/[id]/participants   Katılımcılar
+/admin/events/[id]/tasks          Task havuzu
+/admin/events/[id]/submissions    Submission review
+/admin/events/[id]/leaderboard    Admin leaderboard
+/admin/events/[id]/reimbursements Masraf review
+```
+
+Dashboard'da event state, Publish/Start/End, QR, event code ve şu canlı
+metrikler bulunur: registered, joined, waiting, active participants, active
+tasks, assignments, submissions ve approved submissions.
+
+## API özeti
+
+Frontend `NEXT_PUBLIC_API_URL` üzerinden FastAPI'ye bağlanır. Cookie tabanlı
+session için credentials korunur.
+
+### Participant
+
+```text
+GET  /events/{slug}
+GET  /events/code/{code}
+POST /events/{slug}/join
+POST /events/code/{code}/join
+GET  /events/{event_id}/status
+GET  /events/{event_id}/me
+GET  /events/{event_id}/progress
+POST /events/{event_id}/tasks/next
+GET  /events/{event_id}/tasks/current
+POST /assignments/{assignment_id}/submit
+GET  /events/{event_id}/leaderboard
+POST /events/{event_id}/reimbursements
+GET  /events/{event_id}/reimbursements/me
+```
+
+### Admin
+
+```text
+POST  /admin/login
+GET   /admin/events
+POST  /admin/events
+GET   /admin/events/{event_id}
+PATCH /admin/events/{event_id}
+GET   /admin/events/{event_id}/qr
+POST  /admin/events/{event_id}/start
+POST  /admin/events/{event_id}/end
+GET   /admin/events/{event_id}/participants
+POST  /admin/events/{event_id}/tasks
+GET   /admin/events/{event_id}/tasks
+PATCH /admin/tasks/{task_id}
+DELETE /admin/tasks/{task_id}
+GET   /admin/events/{event_id}/submissions
+POST  /admin/submissions/{submission_id}/review
+GET   /admin/events/{event_id}/leaderboard
+GET   /admin/events/{event_id}/reimbursements
+POST  /admin/reimbursements/{reimbursement_id}/review
+POST  /admin/reimbursements/{reimbursement_id}/paid
+```
+
+## Vercel ve Railway deploy
+
+### Vercel
+
+Vercel project root olarak repository root veya `apps/web` kullanılabilir.
+Build command her iki durumda da:
+
+```text
+npm run build
+```
+
+Install command:
+
+```text
+npm install
+```
+
+Production environment variable:
+
+```env
+NEXT_PUBLIC_API_URL=https://<railway-api-domain>
+```
+
+Bu değer build sırasında frontend'e gömüldüğü için değişiklikten sonra
+redeploy gerekir. `localhost` production frontend'den çalışmaz.
+
+### Railway
+
+Railway repository root'tan build edilmelidir. `railway.toml` Dockerfile,
+migration, healthcheck ve start command'ı tanımlar.
+
+```env
+APP_ENV=production
+APP_URL=https://<vercel-domain>
+ALLOWED_ORIGINS=https://<vercel-domain>
+DATABASE_URL=<railway-postgres-url>
+SESSION_SECRET=<long-random-secret>
+STORAGE_PROVIDER=railway
+STORAGE_BUCKET=<bucket>
+STORAGE_ENDPOINT=<s3-compatible-endpoint>
+STORAGE_ACCESS_KEY=<access-key>
+STORAGE_SECRET_KEY=<secret-key>
+```
+
+Railway `PORT` değerini otomatik sağlar. Deploy loglarında Alembic migration
+ve `/health` için `200 OK` görülmelidir. `APP_URL` production'da localhost
+olmamalıdır; QR URL'si bu değerden üretilir. Vercel domain'i `ALLOWED_ORIGINS`
+içinde birebir bulunmalıdır.
+
+## Monad ödül altyapısı
+
+Monad opsiyoneldir; event, task, submission ve leaderboard akışı blockchain
+olmadan da çalışır.
+
+```text
+Network:  Monad Testnet
+Chain ID: 10143
+RPC:      https://testnet-rpc.monad.xyz
+Explorer: https://testnet.monadscan.com
+Faucet:   https://faucet.monad.xyz
+```
+
+Contract test ve deploy:
 
 ```bash
 forge test --root packages/contracts
-```
+export MONAD_RPC_URL="https://testnet-rpc.monad.xyz"
+export MONAD_CHAIN_ID="10143"
+export DEPLOYER_PRIVATE_KEY="<local-only-private-key>"
 
-Deployment requires the documented `MONAD_RPC_URL` and
-`REWARD_SIGNER_PRIVATE_KEY` values:
-
-```bash
 forge script packages/contracts/script/DeployRewardPool.s.sol:DeployRewardPool \
   --rpc-url "$MONAD_RPC_URL" \
-  --private-key "$REWARD_SIGNER_PRIVATE_KEY" \
+  --private-key "$DEPLOYER_PRIVATE_KEY" \
   --broadcast
 ```
 
-The backend settlement lifecycle is tested with a mock provider and is kept
-separate from participant scoring. Configure a real Monad gateway before
-enabling production settlement.
+Deploy sonrası RewardPool'a native MON yatırılır ve backend signer authorized
+yapılır. Private key frontend'e, Git'e, README'ye veya sohbet mesajına yazılmaz.
+
+## Test ve güvenlik
+
+```bash
+PYTHONPATH=apps/api apps/api/.venv/bin/pytest -q
+npm run build:web
+forge test --root packages/contracts
+git diff --check
+```
+
+Minimum demo doğrulaması:
+
+1. API `/health` 200 döner.
+2. Admin login çalışır.
+3. Admin event oluşturur.
+4. Task havuzu oluşturulur.
+5. Event publish edilir.
+6. QR ve event code aynı event'i açar.
+7. Katılımcı waiting ekranına girer.
+8. Admin start edince task atanır.
+9. Proof gönderilir.
+10. Admin submission'ı review eder.
+
+Gizli dosyalar commit edilmez: `.env`, private key, session secret, Railway
+credentials, `broadcast/` ve `cache/`.
+
+## Dokümantasyon
+
+- [Tasarım handoff](docs/DESIGN_HANDOFF.md)
+- [Teknik spesifikasyon](docs/TECHNICAL_SPEC.md)
+- [Proje özeti](docs/PROJECT_BRIEF.md)
+- [Agent execution plan](docs/AGENT_EXECUTION_PLAN.md)
