@@ -67,13 +67,13 @@ export default function EventEntryPage() {
   return (
     <main className="screen">
       <section className="card">
-        <p className="eyebrow">Platform event</p>
+      <p className="eyebrow">Platform event</p>
         <h1>{event.name}</h1>
         <p>
-          {event.description ?? "Join the event with your registered email."}
+          {event.description ?? "Enter your email to join the event queue."}
         </p>
         <form onSubmit={handleSubmit}>
-          <label htmlFor="email">Registered email</label>
+          <label htmlFor="email">Email</label>
           <input
             id="email"
             type="email"

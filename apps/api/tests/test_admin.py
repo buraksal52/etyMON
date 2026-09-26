@@ -128,21 +128,15 @@ def test_organizer_can_manage_event_participants_and_tasks() -> None:
     assert published.status_code == 200
     assert published.json()["event"]["state"] == EventState.WAITING.value
 
-    imported = client.post(
-        f"/admin/events/{event_id}/participants/import",
-        files={
-            "file": (
-                "participants.csv",
-                b"email,display_name\nnew-one@example.com,New One\nnew-two@example.com,New Two\n",
-                "text/csv",
-            )
-        },
+    joined = client.post(
+        "/events/code/admin-event/join",
+        json={"email": "new-one@example.com", "displayName": "New One"},
     )
-    assert imported.status_code == 200
-    assert imported.json() == {"imported": 2, "skipped": 0}
+    assert joined.status_code == 200
+    assert joined.json()["eventId"] == event_id
     participants = client.get(f"/admin/events/{event_id}/participants")
     assert participants.status_code == 200
-    assert len(participants.json()["participants"]) == 3
+    assert len(participants.json()["participants"]) == 2
 
     task = client.post(
         f"/admin/events/{event_id}/tasks",

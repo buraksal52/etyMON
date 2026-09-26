@@ -467,7 +467,10 @@ The QR does NOT contain secret authentication information.
 
 The QR only identifies the event.
 
-Participant eligibility comes from email matching.
+The same event slug is accepted as a typed participant event code. Code entry
+Code entry and QR entry resolve the same event. The participant enters an email
+on first join; the API creates the participant and event membership, then puts
+them in the waiting queue.
 
 ---
 
@@ -814,7 +817,6 @@ POST   /admin/events/:id/start
 POST   /admin/events/:id/end
 GET    /admin/events/:id/qr
 
-POST   /admin/events/:id/participants/import
 GET    /admin/events/:id/participants
 
 POST   /admin/events/:id/tasks
@@ -1207,8 +1209,9 @@ Minimum automated coverage:
 
 ## Integration
 
-* eligible participant join;
-* invalid participant rejected;
+* first-time participant join by QR URL;
+* first-time participant join by event code;
+* event join blocked outside the waiting state;
 * event start;
 * one active assignment only;
 * proof submission;

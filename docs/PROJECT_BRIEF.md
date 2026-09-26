@@ -571,7 +571,7 @@ A successful demo must show the following sequence:
 
 1. Organizer creates/configures an event.
 2. Participant scans event QR.
-3. Participant enters an eligible email.
+3. Participant enters an email and joins the waiting queue.
 4. Participant enters waiting screen.
 5. Organizer starts event.
 6. Participant automatically receives a random task.

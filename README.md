@@ -32,6 +32,9 @@ source apps/api/.venv/bin/activate
 pip install -r apps/api/requirements.txt
 ./scripts/migrate.sh
 python apps/api/seed.py
+
+# Create a real local organizer; the command prompts for a password.
+python scripts/create_admin.py --email admin@example.com --name "Event Admin"
 ```
 
 Start the API:
@@ -50,7 +53,8 @@ Health check: `http://localhost:8000/health`.
 
 The Next.js app is intended for Vercel. The FastAPI app and PostgreSQL run on
 Railway in deployed environments. Railway runs the Alembic migration as a
-pre-deploy command. Phase 1 seed data is available with:
+pre-deploy command. The seed command only reports current database counts; it
+does not create demo events, participants, tasks, or organizer credentials.
 
 ```bash
 DATABASE_URL=postgresql+psycopg://platform:platform@localhost:5432/platform \
@@ -65,20 +69,15 @@ under `storage-data/` for proof and receipt uploads. Production must set
 Authentication and the event flows are implemented in later phases described
 in `docs/`.
 
+Participants enter through the QR URL `/e/:slug` or by typing the event code,
+which is the event slug. Both methods create the participant record on first
+join, then place the participant in the waiting queue. The organizer starts
+the event after participants reach the waiting screen.
+
 State-changing browser requests are checked against the configured allowed
 origins. Login and participant-join endpoints also have an in-memory MVP rate
 limit; for multiple Railway API instances, replace it with a shared Redis- or
 database-backed limiter.
-
-Development organizer credentials:
-
-```text
-email: organizer@example.com
-password: phase3-demo-password
-```
-
-These credentials are for local seed data only and must not be used in
-production.
 
 ## Environment variables
 
@@ -114,16 +113,16 @@ origin (and any intentionally used preview origin).
    to it.
 4. Deploy. `railway.toml` runs `alembic -c alembic.ini upgrade head` before
    starting the API and exposes `/health` for the health check.
-5. Run the seed command only for a disposable demo environment. Production
-   organizer and participant data must be imported through the admin flow.
+5. Create the first organizer with `scripts/create_admin.py`, then create the
+   event and task pool from the admin flow. No demo data is inserted.
 
 ### Demo walkthrough
 
-1. Start with an event in `WAITING` and an eligible participant email.
-2. Open `/e/<event-slug>`, enter the eligible email, and verify the waiting
-   screen.
-3. Sign in at `/admin`, start the event, and verify that the participant gets
-   a task.
+1. Sign in at `/admin`, create an event, add its task pool, and publish it.
+2. Use the event dashboard's QR code or event code to join from `/e/<event-slug>`
+   with a participant email and verify the waiting screen.
+3. Watch the waiting count update, then start the event and verify that the
+   participant gets a randomly assigned task.
 4. Submit an allowed image proof, approve it from the submissions screen, and
    verify the score and leaderboard.
 5. Request the next task, upload a travel receipt, approve it, and mark it
@@ -134,7 +133,7 @@ origin (and any intentionally used preview origin).
 
 After signing in, the organizer dashboard is available at `/admin`. It
 supports event creation/configuration, publishing and event controls,
-participant CSV import, task management, proof review, leaderboard review,
+live participant queue, task management, proof review, leaderboard review,
 and travel reimbursement review.
 
 Participant progress and travel reimbursement pages are available under the

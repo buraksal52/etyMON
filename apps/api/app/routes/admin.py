@@ -1,9 +1,7 @@
-import csv
-import io
 from datetime import datetime, timezone
 
 import qrcode
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -276,73 +274,6 @@ def update_event(
     return {"event": serialize_event(event)}
 
 
-@router.post("/events/{event_id}/participants/import")
-async def import_participants(
-    event_id: str,
-    file: UploadFile = File(...),
-    current=Depends(get_current_organizer),
-    db: Session = Depends(get_db),
-) -> dict[str, int]:
-    event = db.get(Event, event_id)
-    if event is None:
-        raise HTTPException(status_code=404, detail="Event not found")
-    if event.state not in {EventState.DRAFT.value, EventState.WAITING.value}:
-        raise HTTPException(status_code=409, detail="Participants cannot be imported after start")
-    content = await file.read(2 * 1024 * 1024 + 1)
-    if len(content) > 2 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Participant CSV is too large")
-    try:
-        rows = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=422, detail="Participant CSV must be UTF-8") from exc
-    if not rows.fieldnames or "email" not in {field.strip().lower() for field in rows.fieldnames}:
-        raise HTTPException(status_code=422, detail="CSV must contain an email column")
-
-    field_map = {field.strip().lower(): field for field in rows.fieldnames}
-    imported = 0
-    skipped = 0
-    for row in rows:
-        email = normalize_email(row.get(field_map["email"], ""))
-        if not email:
-            skipped += 1
-            continue
-        name_field = field_map.get("display_name")
-        display_name = (row.get(name_field, "") or "").strip() if name_field else ""
-        participant = db.query(Participant).filter_by(email=email).one_or_none()
-        if participant is None:
-            participant = Participant(email=email, display_name=display_name or None)
-            db.add(participant)
-            db.flush()
-        elif display_name and not participant.display_name:
-            participant.display_name = display_name
-        membership = (
-            db.query(EventParticipant)
-            .filter_by(event_id=event.id, participant_id=participant.id)
-            .one_or_none()
-        )
-        if membership is None:
-            db.add(
-                EventParticipant(event_id=event.id, participant_id=participant.id, eligible=True)
-            )
-            imported += 1
-        else:
-            membership.eligible = True
-            skipped += 1
-    db.add(
-        AuditLog(
-            event_id=event.id,
-            actor_type="ORGANIZER",
-            actor_id=current[1].id,
-            action="PARTICIPANTS_IMPORTED",
-            entity_type="EVENT",
-            entity_id=event.id,
-            metadata_json={"imported": imported, "skipped": skipped},
-        )
-    )
-    db.commit()
-    return {"imported": imported, "skipped": skipped}
-
-
 @router.get("/events/{event_id}/participants")
 def list_participants(
     event_id: str,
@@ -498,17 +429,28 @@ def get_dashboard(
     event = db.get(Event, event_id)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    joined_participants = db.query(EventParticipant).filter(
+        EventParticipant.event_id == event.id,
+        EventParticipant.checked_in_at.is_not(None),
+    ).count()
     return {
-        "event": {"id": event.id, "name": event.name, "state": event.state},
+        "event": {
+            "id": event.id,
+            "name": event.name,
+            "slug": event.slug,
+            "state": event.state,
+        },
         "metrics": {
             "registeredParticipants": db.query(EventParticipant)
             .filter_by(event_id=event.id)
             .count(),
-            "activeParticipants": db.query(EventParticipant)
-            .filter(
-                EventParticipant.event_id == event.id, EventParticipant.checked_in_at.is_not(None)
-            )
-            .count(),
+            "activeParticipants": (
+                joined_participants if event.state == EventState.ACTIVE.value else 0
+            ),
+            "waitingParticipants": (
+                joined_participants if event.state == EventState.WAITING.value else 0
+            ),
+            "joinedParticipants": joined_participants,
             "totalAssignments": db.query(TaskAssignment).filter_by(event_id=event.id).count(),
             "totalSubmissions": db.query(Submission)
             .join(TaskAssignment)

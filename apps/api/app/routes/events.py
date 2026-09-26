@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.auth import (
@@ -28,6 +28,15 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 class JoinRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
+    display_name: str | None = Field(default=None, max_length=255)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_camel_case_name(cls, values: object) -> object:
+        if isinstance(values, dict) and "display_name" not in values and "displayName" in values:
+            values = dict(values)
+            values["display_name"] = values.pop("displayName")
+        return values
 
 
 @router.get("/{slug}")
@@ -44,6 +53,12 @@ def get_event(slug: str, db: Session = Depends(get_db)) -> dict[str, object]:
         "timezone": event.timezone,
         "taskDeadlineAt": event.task_deadline_at,
     }
+
+
+@router.get("/code/{code}")
+def get_event_by_code(code: str, db: Session = Depends(get_db)) -> dict[str, object]:
+    """Resolve the participant-facing event code (the event slug)."""
+    return get_event(code.strip().lower(), db)
 
 
 @router.post("/{slug}/join")
@@ -69,20 +84,32 @@ def join_event(
             status_code=status.HTTP_409_CONFLICT, detail="Event is not accepting entries"
         )
 
-    participant = (
-        db.query(Participant).filter_by(email=normalize_email(payload.email)).one_or_none()
+    normalized_email = normalize_email(payload.email)
+    participant = db.query(Participant).filter_by(email=normalized_email).one_or_none()
+    if participant is None:
+        participant = Participant(
+            email=normalized_email,
+            display_name=payload.display_name.strip() if payload.display_name else None,
+        )
+        db.add(participant)
+        db.flush()
+    elif payload.display_name and not participant.display_name:
+        participant.display_name = payload.display_name.strip()
+
+    event_participant = (
+        db.query(EventParticipant)
+        .filter_by(event_id=event.id, participant_id=participant.id)
+        .one_or_none()
     )
-    event_participant = None
-    if participant is not None:
-        event_participant = (
-            db.query(EventParticipant)
-            .filter_by(event_id=event.id, participant_id=participant.id, eligible=True)
-            .one_or_none()
+    if event_participant is None:
+        event_participant = EventParticipant(
+            event_id=event.id,
+            participant_id=participant.id,
+            eligible=True,
         )
-    if participant is None or event_participant is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Participant is not eligible"
-        )
+        db.add(event_participant)
+    elif not event_participant.eligible:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Participant is blocked")
 
     event_participant.checked_in_at = event_participant.checked_in_at or datetime.now(timezone.utc)
     db.commit()
@@ -99,6 +126,18 @@ def join_event(
         "participant": {"displayName": participant.display_name},
         "state": event.state,
     }
+
+
+@router.post("/code/{code}/join")
+def join_event_by_code(
+    code: str,
+    payload: JoinRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    """Join through a typed event code without exposing authentication data."""
+    return join_event(code.strip().lower(), payload, request, response, db)
 
 
 @router.get("/{event_id}/status")

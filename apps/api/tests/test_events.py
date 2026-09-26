@@ -66,13 +66,28 @@ def test_eligible_participant_can_join_and_read_session() -> None:
     assert me.json()["participant"]["displayName"] == "Alice"
 
 
-def test_unknown_email_is_rejected_without_session() -> None:
+def test_event_code_resolves_the_same_qr_event() -> None:
+    client, event_id, _ = make_client()
+
+    event = client.get("/events/code/TEST-EVENT")
+    assert event.status_code == 200
+    assert event.json()["id"] == event_id
+
+    joined = client.post(
+        "/events/code/test-event/join",
+        json={"email": "alice@example.com"},
+    )
+    assert joined.status_code == 200
+    assert joined.json()["eventId"] == event_id
+
+
+def test_new_email_is_registered_on_first_event_join() -> None:
     client, _, _ = make_client()
 
     response = client.post("/events/test-event/join", json={"email": "unknown@example.com"})
 
-    assert response.status_code == 403
-    assert "platform_session" not in client.cookies
+    assert response.status_code == 200
+    assert "platform_session" in client.cookies
 
 
 def test_duplicate_join_is_idempotent_without_duplicate_membership() -> None:

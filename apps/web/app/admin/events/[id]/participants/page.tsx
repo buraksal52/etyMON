@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
 import { apiRequest } from "../../../../../lib/api";
@@ -17,7 +17,6 @@ export default function ParticipantListPage() {
   const params = useParams<{ id: string }>();
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -38,35 +37,12 @@ export default function ParticipantListPage() {
     void load();
   }, [load]);
 
-  async function importFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    try {
-      const result = await apiRequest<{ imported: number; skipped: number }>(
-        `/admin/events/${params.id}/participants/import`,
-        { method: "POST", body: formData },
-      );
-      setMessage(`Imported ${result.imported}; skipped ${result.skipped}.`);
-      await load();
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Unable to import participants",
-      );
-    }
-  }
-
   return (
     <main className="screen admin-screen">
       <section className="card">
-        <p className="eyebrow">Participant list</p>
-        <h1>Import participants</h1>
-        <p>CSV format: email,display_name</p>
-        <input type="file" accept=".csv,text/csv" onChange={importFile} />
-        {message && <p className="success">{message}</p>}
+        <p className="eyebrow">Live participant list</p>
+        <h1>Participants join with QR or event code</h1>
+        <p>New participants appear here after they enter the event code or scan the QR code.</p>
         {error && <p className="error">{error}</p>}
       </section>
       <section className="card participant-list">

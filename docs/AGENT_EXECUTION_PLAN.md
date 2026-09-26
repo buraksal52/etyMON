@@ -826,17 +826,9 @@ TEXT or URL
 
 # 26. Import Format
 
-Participant import should support CSV.
-
-Recommended:
-
-```csv
-email,display_name
-burak@example.com,Burak
-alice@example.com,Alice
-```
-
-Only email must be required.
+Participants are not preloaded by CSV. They join through the event QR URL or
+event code and enter an email; the API creates the participant record and event
+membership at that point.
 
 ---
 

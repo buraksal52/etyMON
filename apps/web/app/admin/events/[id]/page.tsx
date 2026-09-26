@@ -8,7 +8,7 @@ import { useParams } from "next/navigation";
 import { apiRequest } from "../../../../lib/api";
 
 type Dashboard = {
-  event: { id: string; name: string; state: string };
+  event: { id: string; name: string; slug: string; state: string };
   metrics: Record<string, number>;
 };
 
@@ -19,6 +19,16 @@ export default function AdminEventDashboardPage() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [eventQr, setEventQr] = useState<EventQr | null>(null);
   const [error, setError] = useState("");
+  const metricLabels: Record<string, string> = {
+    registeredParticipants: "Registered participants",
+    joinedParticipants: "Joined participants",
+    waitingParticipants: "Waiting participants",
+    activeParticipants: "Active participants",
+    activeTasks: "Active tasks",
+    totalAssignments: "Task assignments",
+    totalSubmissions: "Submissions",
+    approvedSubmissions: "Approved submissions",
+  };
 
   const load = useCallback(async () => {
     try {
@@ -35,6 +45,8 @@ export default function AdminEventDashboardPage() {
 
   useEffect(() => {
     void load();
+    const timer = window.setInterval(() => void load(), 3000);
+    return () => window.clearInterval(timer);
   }, [load]);
 
   async function changeState(action: "start" | "end" | "publish") {
@@ -97,7 +109,7 @@ export default function AdminEventDashboardPage() {
       <section className="metrics-grid">
         {Object.entries(dashboard.metrics).map(([key, value]) => (
           <article className="card metric-card" key={key}>
-            <p className="eyebrow">{key.replaceAll(/([A-Z])/g, " $1")}</p>
+            <p className="eyebrow">{metricLabels[key] ?? key}</p>
             <strong>{value}</strong>
           </article>
         ))}
@@ -107,7 +119,9 @@ export default function AdminEventDashboardPage() {
           <div>
             <p className="eyebrow">Participant entry</p>
             <h2>Event QR</h2>
-            <p>Participants scan this code, then verify their eligible email.</p>
+            <p>Scan the QR code or enter this event code to join the waiting queue.</p>
+            <p><strong>Event code:</strong> <code>{dashboard.event.slug}</code></p>
+            <p>Participants verify their email after opening the event.</p>
             <code>{eventQr.url}</code>
           </div>
           <Image
