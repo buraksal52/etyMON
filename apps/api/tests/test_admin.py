@@ -71,6 +71,11 @@ def test_organizer_can_login_start_and_end_event() -> None:
     assert dashboard.status_code == 200
     assert dashboard.json()["metrics"]["activeTasks"] == 1
 
+    qr = client.get(f"/admin/events/{event_id}/qr")
+    assert qr.status_code == 200
+    assert qr.json()["url"].endswith("/e/admin-event")
+    assert "<svg" in qr.json()["svg"]
+
     start = client.post(f"/admin/events/{event_id}/start")
     assert start.status_code == 200
     assert start.json()["state"] == "ACTIVE"

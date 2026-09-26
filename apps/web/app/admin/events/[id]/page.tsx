@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
@@ -11,14 +12,18 @@ type Dashboard = {
   metrics: Record<string, number>;
 };
 
+type EventQr = { url: string; svg: string };
+
 export default function AdminEventDashboardPage() {
   const params = useParams<{ id: string }>();
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [eventQr, setEventQr] = useState<EventQr | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
       setDashboard(await apiRequest<Dashboard>(`/admin/events/${params.id}`));
+      setEventQr(await apiRequest<EventQr>(`/admin/events/${params.id}/qr`));
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -97,6 +102,24 @@ export default function AdminEventDashboardPage() {
           </article>
         ))}
       </section>
+      {eventQr && (
+        <section className="card event-qr-card">
+          <div>
+            <p className="eyebrow">Participant entry</p>
+            <h2>Event QR</h2>
+            <p>Participants scan this code, then verify their eligible email.</p>
+            <code>{eventQr.url}</code>
+          </div>
+          <Image
+            className="event-qr"
+            src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(eventQr.svg)}`}
+            alt="Event entry QR code"
+            width={160}
+            height={160}
+            unoptimized
+          />
+        </section>
+      )}
       <nav className="admin-links">
         <Link href={`/admin/events/${params.id}/participants`}>
           Participants

@@ -12,7 +12,9 @@ dependencies = [
   "psycopg[binary]>=3.2,<4.0",
   "itsdangerous>=2.2,<3.0",
   "boto3>=1.37,<2.0",
+  "web3>=7.13,<8.0",
   "python-multipart>=0.0.20,<1.0",
+  "qrcode>=8.2,<9.0",
 ]
 
 [build-system]

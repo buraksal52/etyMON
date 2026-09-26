@@ -5,6 +5,7 @@ import pytest
 from app.blockchain.rewards import (
     MonadRewardSettlementProvider,
     RewardInput,
+    Web3MonadRewardPoolGateway,
 )
 
 
@@ -62,3 +63,21 @@ def test_monad_provider_rejects_zero_rewards_before_rpc_call() -> None:
         provider.send_reward(RewardInput(**{**VALID_INPUT.__dict__, "amount_wei": 0}))
 
     assert gateway.calls == []
+
+
+def test_web3_gateway_validates_before_rpc_submission() -> None:
+    gateway = Web3MonadRewardPoolGateway(
+        rpc_url="http://127.0.0.1:18545",
+        private_key="0x" + "11" * 32,
+        contract_address="0x" + "22" * 20,
+        chain_id=143,
+    )
+
+    with pytest.raises(ValueError, match="event_id"):
+        gateway.reward_participant(
+            "event",
+            VALID_INPUT.participant_id,
+            VALID_INPUT.reason_id,
+            VALID_INPUT.recipient,
+            VALID_INPUT.amount_wei,
+        )

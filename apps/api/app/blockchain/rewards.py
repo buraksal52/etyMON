@@ -1,6 +1,27 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from web3 import Web3
+
+from app.settings import settings
+
+
+REWARD_POOL_ABI = [
+    {
+        "inputs": [
+            {"internalType": "bytes32", "name": "eventId", "type": "bytes32"},
+            {"internalType": "bytes32", "name": "participantId", "type": "bytes32"},
+            {"internalType": "bytes32", "name": "reasonId", "type": "bytes32"},
+            {"internalType": "address payable", "name": "recipient", "type": "address"},
+            {"internalType": "uint256", "name": "amount", "type": "uint256"},
+        ],
+        "name": "rewardParticipant",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    }
+]
+
 
 @dataclass(frozen=True)
 class RewardInput:
@@ -38,6 +59,76 @@ class MonadRewardPoolGateway(Protocol):
         recipient: str,
         amount_wei: int,
     ) -> str: ...
+
+
+class Web3MonadRewardPoolGateway:
+    """Signs and submits native-token rewards to the deployed RewardPool."""
+
+    def __init__(
+        self,
+        rpc_url: str,
+        private_key: str,
+        contract_address: str,
+        chain_id: int,
+    ) -> None:
+        if not rpc_url or not private_key or not contract_address:
+            raise ValueError("Monad RPC, signer key, and contract address are required")
+        self.chain_id = chain_id
+        self.web3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 30}))
+        self.account = self.web3.eth.account.from_key(private_key)
+        self.contract = self.web3.eth.contract(
+            address=self.web3.to_checksum_address(contract_address),
+            abi=REWARD_POOL_ABI,
+        )
+
+    def reward_participant(
+        self,
+        event_id: str,
+        participant_id: str,
+        reason_id: str,
+        recipient: str,
+        amount_wei: int,
+    ) -> str:
+        validate_reward_input(
+            RewardInput(
+                event_id=event_id,
+                participant_id=participant_id,
+                reason_id=reason_id,
+                recipient=recipient,
+                amount_wei=amount_wei,
+            )
+        )
+        transaction = self.contract.functions.rewardParticipant(
+            self.web3.to_bytes(hexstr=event_id),
+            self.web3.to_bytes(hexstr=participant_id),
+            self.web3.to_bytes(hexstr=reason_id),
+            self.web3.to_checksum_address(recipient),
+            amount_wei,
+        ).build_transaction(
+            {
+                "from": self.account.address,
+                "nonce": self.web3.eth.get_transaction_count(self.account.address, "pending"),
+                "chainId": self.chain_id,
+                "value": 0,
+                "gasPrice": self.web3.eth.gas_price,
+            }
+        )
+        transaction["gas"] = self.web3.eth.estimate_gas(transaction)
+        signed = self.account.sign_transaction(transaction)
+        tx_hash = self.web3.eth.send_raw_transaction(signed.raw_transaction)
+        return self.web3.to_hex(tx_hash)
+
+
+def create_monad_reward_provider() -> "MonadRewardSettlementProvider":
+    if settings.monad_chain_id is None:
+        raise RuntimeError("MONAD_CHAIN_ID is not configured")
+    gateway = Web3MonadRewardPoolGateway(
+        rpc_url=settings.monad_rpc_url,
+        private_key=settings.reward_signer_private_key,
+        contract_address=settings.reward_pool_contract_address,
+        chain_id=settings.monad_chain_id,
+    )
+    return MonadRewardSettlementProvider(gateway, chain_id=settings.monad_chain_id)
 
 
 class MonadRewardSettlementProvider:

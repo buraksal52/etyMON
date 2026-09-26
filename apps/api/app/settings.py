@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_env: str = "development"
+    app_url: str = "http://localhost:3000"
     allowed_origins: str = "http://localhost:3000"
     database_url: str = "postgresql+psycopg://platform:platform@localhost:5432/platform"
     event_timezone: str = "event-local"
@@ -14,6 +15,10 @@ class Settings(BaseSettings):
     storage_secret_key: str = ""
     storage_public_base_url: str = ""
     storage_local_dir: str = "storage-data"
+    monad_rpc_url: str = ""
+    monad_chain_id: int | None = None
+    reward_pool_contract_address: str = ""
+    reward_signer_private_key: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -2,6 +2,7 @@ import csv
 import io
 from datetime import datetime, timezone
 
+import qrcode
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -96,6 +97,25 @@ class TaskUpdateRequest(BaseModel):
     metadata: dict[str, object] | None = None
 
 
+def event_qr_svg(url: str) -> str:
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=1, border=4)
+    qr.add_data(url)
+    qr.make(fit=True)
+    matrix = qr.get_matrix()
+    size = len(matrix)
+    modules = "".join(
+        f'<rect x="{column}" y="{row}" width="1" height="1"/>'
+        for row, values in enumerate(matrix)
+        for column, enabled in enumerate(values)
+        if enabled
+    )
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}" '
+        f'role="img" aria-label="Event QR code"><rect width="100%" height="100%" fill="white"/>'
+        f'<g fill="black" shape-rendering="crispEdges">{modules}</g></svg>'
+    )
+
+
 @router.post("/login")
 def admin_login(
     payload: AdminLoginRequest,
@@ -126,6 +146,19 @@ def admin_login(
         samesite="none" if settings.app_env == "production" else "lax",
     )
     return {"status": "authenticated"}
+
+
+@router.get("/events/{event_id}/qr")
+def get_event_qr(
+    event_id: str,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    event_url = f"{settings.app_url.rstrip('/')}/e/{event.slug}"
+    return {"url": event_url, "svg": event_qr_svg(event_url)}
 
 
 def serialize_task(task: Task) -> dict[str, object]:

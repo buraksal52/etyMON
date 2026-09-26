@@ -225,6 +225,37 @@ button:disabled {
   font-size: 1.7rem;
 }
 
+.event-qr-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  width: 100%;
+  margin: 1.5rem 0;
+  text-align: left;
+}
+
+.event-qr-card h2 {
+  margin: 0 0 0.5rem;
+}
+
+.event-qr-card p:not(.eyebrow) {
+  color: #6c6c65;
+}
+
+.event-qr-card code {
+  overflow-wrap: anywhere;
+  color: #5b35b5;
+}
+
+.event-qr {
+  width: 10rem;
+  height: 10rem;
+  flex: 0 0 auto;
+  border: 0.75rem solid #fff;
+  background: #fff;
+}
+
 .admin-links {
   display: flex;
   flex-wrap: wrap;

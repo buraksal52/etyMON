@@ -2,6 +2,24 @@
 
 Platform is a mobile-first hackathon participation platform for Monad events.
 
+## Architecture
+
+```text
+Vercel (Next.js participant/admin web app)
+                  |
+                  v
+Railway (FastAPI API) ---- Railway PostgreSQL
+                  |
+                  +---- Railway Storage Bucket (S3-compatible proofs/receipts)
+                  |
+                  +---- Monad RewardPool (optional reward settlement)
+```
+
+The browser calls FastAPI through `NEXT_PUBLIC_API_URL`. FastAPI owns
+authentication, event state, task assignment, proof and receipt uploads,
+organizer review, scoring, leaderboard data, and the optional Monad settlement
+adapter.
+
 ## Phase 0 local setup
 
 Prerequisites: Node.js 24+, Python 3.12+, and Docker.
@@ -61,6 +79,56 @@ password: phase3-demo-password
 
 These credentials are for local seed data only and must not be used in
 production.
+
+## Environment variables
+
+Copy `.env.example` for local development. In production configure at least:
+
+- FastAPI: `APP_ENV`, `APP_URL`, `ALLOWED_ORIGINS`, `SESSION_SECRET`, and
+  `DATABASE_URL`.
+- Vercel: `NEXT_PUBLIC_API_URL` set to the public Railway API URL.
+- Railway Storage: `STORAGE_PROVIDER=railway`, `STORAGE_BUCKET`,
+  `STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`, and `STORAGE_SECRET_KEY`.
+- Rewards, only when enabled: `MONAD_RPC_URL`, `MONAD_CHAIN_ID`,
+  `REWARD_POOL_CONTRACT_ADDRESS`, and `REWARD_SIGNER_PRIVATE_KEY`.
+
+Do not commit real secrets. `ALLOWED_ORIGINS` must include the Vercel production
+origin (and any intentionally used preview origin).
+
+## Deployment
+
+### Vercel frontend
+
+1. Import the repository into Vercel and select the `apps/web` workspace, or
+   keep the repository root and use the committed `vercel.json`.
+2. Set `NEXT_PUBLIC_API_URL` to the deployed Railway API URL.
+3. Deploy. The configured build command is `npm run build:web`.
+
+### Railway API and database
+
+1. Create a Railway PostgreSQL service and an API service from this repository.
+2. Keep the repository root as the service root so `railway.toml` and the
+   `apps/api/Dockerfile` are used.
+3. Set the FastAPI, database, storage, and allowed-origin variables listed
+   above. Railway supplies `PORT`; the committed start command binds FastAPI
+   to it.
+4. Deploy. `railway.toml` runs `alembic -c alembic.ini upgrade head` before
+   starting the API and exposes `/health` for the health check.
+5. Run the seed command only for a disposable demo environment. Production
+   organizer and participant data must be imported through the admin flow.
+
+### Demo walkthrough
+
+1. Start with an event in `WAITING` and an eligible participant email.
+2. Open `/e/<event-slug>`, enter the eligible email, and verify the waiting
+   screen.
+3. Sign in at `/admin`, start the event, and verify that the participant gets
+   a task.
+4. Submit an allowed image proof, approve it from the submissions screen, and
+   verify the score and leaderboard.
+5. Request the next task, upload a travel receipt, approve it, and mark it
+   paid from the reimbursement screen.
+6. End the event and verify that a new task request is rejected.
 
 ## Admin routes
 

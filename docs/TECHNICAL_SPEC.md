@@ -812,6 +812,7 @@ PATCH  /admin/events/:id
 
 POST   /admin/events/:id/start
 POST   /admin/events/:id/end
+GET    /admin/events/:id/qr
 
 POST   /admin/events/:id/participants/import
 GET    /admin/events/:id/participants
