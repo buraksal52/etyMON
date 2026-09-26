@@ -145,3 +145,19 @@ def test_rejected_submission_does_not_award_points() -> None:
         assert db.query(EventParticipant).one().score == 0
         assert db.query(ScoreEntry).count() == 0
         assert db.query(AuditLog).filter_by(action="SUBMISSION_REJECTED").count() == 1
+
+
+def test_organizer_can_review_existing_submission_after_deadline() -> None:
+    client, _, submission_id, engine = make_review_client()
+
+    with Session(engine) as db:
+        event = db.query(Event).one()
+        event.task_deadline_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.commit()
+
+    response = client.post(
+        f"/admin/submissions/{submission_id}/review",
+        json={"decision": "APPROVED", "note": "Reviewed after event deadline"},
+    )
+
+    assert response.status_code == 200

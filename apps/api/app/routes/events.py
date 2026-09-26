@@ -11,7 +11,14 @@ from app.auth import (
     get_current_participant,
     normalize_email,
 )
-from app.db.models import Event, EventParticipant, EventState, Participant
+from app.db.models import (
+    AssignmentStatus,
+    Event,
+    EventParticipant,
+    EventState,
+    Participant,
+    TaskAssignment,
+)
 from app.db.session import get_db
 from app.settings import settings
 
@@ -117,4 +124,36 @@ def get_me(
         "participant": {"displayName": participant.display_name},
         "score": event_participant.score,
         "state": event.state,
+    }
+
+
+@router.get("/{event_id}/progress")
+def get_progress(
+    event_id: str,
+    current: tuple = Depends(get_current_participant),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    session, participant, event_participant = current
+    if session.event_id != event_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Event session mismatch")
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    assignments = (
+        db.query(TaskAssignment)
+        .filter_by(event_id=event_id, participant_id=participant.id)
+        .all()
+    )
+    return {
+        "eventId": event.id,
+        "participant": {"displayName": participant.display_name},
+        "score": event_participant.score,
+        "state": event.state,
+        "counts": {
+            "assigned": sum(a.status == AssignmentStatus.ASSIGNED.value for a in assignments),
+            "submitted": sum(a.status == AssignmentStatus.SUBMITTED.value for a in assignments),
+            "approved": sum(a.status == AssignmentStatus.APPROVED.value for a in assignments),
+            "rejected": sum(a.status == AssignmentStatus.REJECTED.value for a in assignments),
+            "total": len(assignments),
+        },
     }

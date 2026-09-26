@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -94,3 +94,61 @@ def test_invalid_event_transitions_are_rejected() -> None:
     assert client.post(f"/admin/events/{event_id}/start").status_code == 409
     assert client.post(f"/admin/events/{event_id}/end").status_code == 200
     assert client.post(f"/admin/events/{event_id}/start").status_code == 409
+
+
+def test_organizer_can_manage_event_participants_and_tasks() -> None:
+    client, event_id, _ = make_admin_client()
+    assert (
+        client.post(
+            "/admin/login", json={"email": "organizer@example.com", "password": "secret"}
+        ).status_code
+        == 200
+    )
+
+    created_event = client.post(
+        "/admin/events",
+        json={
+            "name": "Created Event",
+            "slug": "created-event",
+            "timezone": "Europe/Istanbul",
+            "task_deadline_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        },
+    )
+    assert created_event.status_code == 200
+    assert created_event.json()["event"]["state"] == EventState.DRAFT.value
+
+    imported = client.post(
+        f"/admin/events/{event_id}/participants/import",
+        files={
+            "file": (
+                "participants.csv",
+                b"email,display_name\nnew-one@example.com,New One\nnew-two@example.com,New Two\n",
+                "text/csv",
+            )
+        },
+    )
+    assert imported.status_code == 200
+    assert imported.json() == {"imported": 2, "skipped": 0}
+    participants = client.get(f"/admin/events/{event_id}/participants")
+    assert participants.status_code == 200
+    assert len(participants.json()["participants"]) == 3
+
+    task = client.post(
+        f"/admin/events/{event_id}/tasks",
+        json={
+            "title": "New task",
+            "description": "Description",
+            "instructions": "Instructions",
+            "points": 25,
+            "proof_type": "TEXT",
+        },
+    )
+    assert task.status_code == 200
+    task_id = task.json()["task"]["id"]
+    assert client.get(f"/admin/events/{event_id}/tasks").json()["tasks"][-1]["title"] == "New task"
+
+    updated = client.patch(f"/admin/tasks/{task_id}", json={"points": 30})
+    assert updated.status_code == 200
+    assert updated.json()["task"]["points"] == 30
+    deleted = client.delete(f"/admin/tasks/{task_id}")
+    assert deleted.status_code == 200

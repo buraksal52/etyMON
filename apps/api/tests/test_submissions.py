@@ -123,3 +123,26 @@ def test_submission_rejects_unsupported_file_type_and_missing_proof() -> None:
         files={"file": ("proof.png", b"\x89PNG\r\n\x1a\nimage-bytes", "image/png")},
     )
     assert missing_url.status_code == 422
+
+
+def test_new_submission_is_rejected_after_event_deadline() -> None:
+    client, _, assignment_id, engine, storage = make_submission_client()
+
+    with Session(engine) as db:
+        assignment = db.get(TaskAssignment, assignment_id)
+        assert assignment is not None
+        event = db.get(Event, assignment.event_id)
+        assert event is not None
+        event.task_deadline_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.commit()
+
+    response = client.post(
+        f"/assignments/{assignment_id}/submit",
+        data={"url": "https://example.com/proof"},
+        files={"file": ("proof.png", b"\x89PNG\r\n\x1a\nimage-bytes", "image/png")},
+    )
+
+    assert response.status_code == 409
+    assert storage.objects == {}
+    with Session(engine) as db:
+        assert db.get(TaskAssignment, assignment_id).status == AssignmentStatus.ASSIGNED.value

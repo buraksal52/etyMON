@@ -1,6 +1,8 @@
+import csv
+import io
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -25,6 +27,7 @@ from app.db.models import (
     SubmissionStatus,
     Task,
     TaskAssignment,
+    TravelReimbursement,
 )
 from app.db.session import get_db
 from app.settings import settings
@@ -42,6 +45,53 @@ class AdminLoginRequest(BaseModel):
 class SubmissionReviewRequest(BaseModel):
     decision: str = Field(pattern="^(APPROVED|REJECTED)$")
     note: str = Field(default="", max_length=2000)
+
+
+class EventCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    description: str | None = None
+    timezone: str = Field(min_length=1, max_length=64)
+    registration_opens_at: datetime | None = None
+    starts_at: datetime | None = None
+    task_deadline_at: datetime
+
+
+class EventUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    timezone: str | None = Field(default=None, min_length=1, max_length=64)
+    registration_opens_at: datetime | None = None
+    starts_at: datetime | None = None
+    task_deadline_at: datetime | None = None
+
+
+class TaskRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    description: str
+    instructions: str
+    points: int = Field(gt=0)
+    proof_type: str = Field(min_length=1, max_length=32)
+    starts_at: datetime | None = None
+    expires_at: datetime | None = None
+    assignment_weight: int = Field(default=1, ge=1)
+    max_assignments: int | None = Field(default=None, ge=1)
+    active: bool = True
+    metadata: dict[str, object] | None = None
+
+
+class TaskUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    instructions: str | None = None
+    points: int | None = Field(default=None, gt=0)
+    proof_type: str | None = Field(default=None, min_length=1, max_length=32)
+    starts_at: datetime | None = None
+    expires_at: datetime | None = None
+    assignment_weight: int | None = Field(default=None, ge=1)
+    max_assignments: int | None = Field(default=None, ge=1)
+    active: bool | None = None
+    metadata: dict[str, object] | None = None
 
 
 @router.post("/login")
@@ -66,6 +116,321 @@ def admin_login(
         samesite="none" if settings.app_env == "production" else "lax",
     )
     return {"status": "authenticated"}
+
+
+def serialize_task(task: Task) -> dict[str, object]:
+    return {
+        "id": task.id,
+        "eventId": task.event_id,
+        "title": task.title,
+        "description": task.description,
+        "instructions": task.instructions,
+        "points": task.points,
+        "proofType": task.proof_type,
+        "startsAt": task.starts_at,
+        "expiresAt": task.expires_at,
+        "assignmentWeight": task.assignment_weight,
+        "maxAssignments": task.max_assignments,
+        "active": task.active,
+        "metadata": task.metadata_json,
+    }
+
+
+@router.post("/events")
+def create_event(
+    payload: EventCreateRequest,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if db.query(Event).filter_by(slug=payload.slug).one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="Event slug already exists")
+    event = Event(
+        name=payload.name,
+        slug=payload.slug,
+        description=payload.description,
+        timezone=payload.timezone,
+        state=EventState.DRAFT.value,
+        registration_opens_at=payload.registration_opens_at,
+        starts_at=payload.starts_at,
+        task_deadline_at=payload.task_deadline_at,
+    )
+    db.add(event)
+    db.flush()
+    organizer = current[1]
+    db.add(
+        AuditLog(
+            event_id=event.id,
+            actor_type="ORGANIZER",
+            actor_id=organizer.id,
+            action="EVENT_CREATED",
+            entity_type="EVENT",
+            entity_id=event.id,
+            metadata_json=None,
+        )
+    )
+    db.commit()
+    db.refresh(event)
+    return {"event": serialize_event(event)}
+
+
+def serialize_event(event: Event) -> dict[str, object]:
+    return {
+        "id": event.id,
+        "name": event.name,
+        "slug": event.slug,
+        "description": event.description,
+        "timezone": event.timezone,
+        "state": event.state,
+        "registrationOpensAt": event.registration_opens_at,
+        "startsAt": event.starts_at,
+        "taskDeadlineAt": event.task_deadline_at,
+        "endedAt": event.ended_at,
+    }
+
+
+@router.patch("/events/{event_id}")
+def update_event(
+    event_id: str,
+    payload: EventUpdateRequest,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if event.state not in {EventState.DRAFT.value, EventState.WAITING.value}:
+        raise HTTPException(status_code=409, detail="Event cannot be edited after start")
+    updates = payload.model_dump(exclude_unset=True)
+    for field, value in updates.items():
+        setattr(event, field, value)
+    organizer = current[1]
+    db.add(
+        AuditLog(
+            event_id=event.id,
+            actor_type="ORGANIZER",
+            actor_id=organizer.id,
+            action="EVENT_UPDATED",
+            entity_type="EVENT",
+            entity_id=event.id,
+            metadata_json=updates,
+        )
+    )
+    db.commit()
+    db.refresh(event)
+    return {"event": serialize_event(event)}
+
+
+@router.post("/events/{event_id}/participants/import")
+async def import_participants(
+    event_id: str,
+    file: UploadFile = File(...),
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if event.state not in {EventState.DRAFT.value, EventState.WAITING.value}:
+        raise HTTPException(status_code=409, detail="Participants cannot be imported after start")
+    content = await file.read(2 * 1024 * 1024 + 1)
+    if len(content) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Participant CSV is too large")
+    try:
+        rows = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=422, detail="Participant CSV must be UTF-8") from exc
+    if not rows.fieldnames or "email" not in {field.strip().lower() for field in rows.fieldnames}:
+        raise HTTPException(status_code=422, detail="CSV must contain an email column")
+
+    field_map = {field.strip().lower(): field for field in rows.fieldnames}
+    imported = 0
+    skipped = 0
+    for row in rows:
+        email = normalize_email(row.get(field_map["email"], ""))
+        if not email:
+            skipped += 1
+            continue
+        name_field = field_map.get("display_name")
+        display_name = (row.get(name_field, "") or "").strip() if name_field else ""
+        participant = db.query(Participant).filter_by(email=email).one_or_none()
+        if participant is None:
+            participant = Participant(email=email, display_name=display_name or None)
+            db.add(participant)
+            db.flush()
+        elif display_name and not participant.display_name:
+            participant.display_name = display_name
+        membership = (
+            db.query(EventParticipant)
+            .filter_by(event_id=event.id, participant_id=participant.id)
+            .one_or_none()
+        )
+        if membership is None:
+            db.add(
+                EventParticipant(event_id=event.id, participant_id=participant.id, eligible=True)
+            )
+            imported += 1
+        else:
+            membership.eligible = True
+            skipped += 1
+    db.add(
+        AuditLog(
+            event_id=event.id,
+            actor_type="ORGANIZER",
+            actor_id=current[1].id,
+            action="PARTICIPANTS_IMPORTED",
+            entity_type="EVENT",
+            entity_id=event.id,
+            metadata_json={"imported": imported, "skipped": skipped},
+        )
+    )
+    db.commit()
+    return {"imported": imported, "skipped": skipped}
+
+
+@router.get("/events/{event_id}/participants")
+def list_participants(
+    event_id: str,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if db.get(Event, event_id) is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    rows = (
+        db.query(EventParticipant, Participant)
+        .join(Participant, EventParticipant.participant_id == Participant.id)
+        .filter(EventParticipant.event_id == event_id)
+        .order_by(Participant.email.asc())
+        .all()
+    )
+    return {
+        "participants": [
+            {
+                "id": participant.id,
+                "email": participant.email,
+                "displayName": participant.display_name,
+                "eligible": membership.eligible,
+                "checkedInAt": membership.checked_in_at,
+                "score": membership.score,
+            }
+            for membership, participant in rows
+        ]
+    }
+
+
+def ensure_task_editable(task: Task, db: Session) -> Event:
+    event = db.get(Event, task.event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if event.state not in {EventState.DRAFT.value, EventState.WAITING.value}:
+        raise HTTPException(status_code=409, detail="Tasks cannot be edited after start")
+    return event
+
+
+@router.post("/events/{event_id}/tasks")
+def create_task(
+    event_id: str,
+    payload: TaskRequest,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    event = db.get(Event, event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    if event.state not in {EventState.DRAFT.value, EventState.WAITING.value}:
+        raise HTTPException(status_code=409, detail="Tasks cannot be created after start")
+    task = Task(
+        event_id=event_id,
+        **payload.model_dump(exclude={"metadata"}),
+        metadata_json=payload.metadata,
+    )
+    db.add(task)
+    db.flush()
+    db.add(
+        AuditLog(
+            event_id=event_id,
+            actor_type="ORGANIZER",
+            actor_id=current[1].id,
+            action="TASK_CREATED",
+            entity_type="TASK",
+            entity_id=task.id,
+            metadata_json={"title": task.title},
+        )
+    )
+    db.commit()
+    db.refresh(task)
+    return {"task": serialize_task(task)}
+
+
+@router.get("/events/{event_id}/tasks")
+def list_tasks(
+    event_id: str,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if db.get(Event, event_id) is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    tasks = db.query(Task).filter_by(event_id=event_id).order_by(Task.created_at.asc()).all()
+    return {"tasks": [serialize_task(task) for task in tasks]}
+
+
+@router.patch("/tasks/{task_id}")
+def update_task(
+    task_id: str,
+    payload: TaskUpdateRequest,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    event = ensure_task_editable(task, db)
+    updates = payload.model_dump(exclude_unset=True, exclude={"metadata"})
+    for field, value in updates.items():
+        setattr(task, field, value)
+    if "metadata" in payload.model_fields_set:
+        task.metadata_json = payload.metadata
+    db.add(
+        AuditLog(
+            event_id=event.id,
+            actor_type="ORGANIZER",
+            actor_id=current[1].id,
+            action="TASK_UPDATED",
+            entity_type="TASK",
+            entity_id=task.id,
+            metadata_json=updates,
+        )
+    )
+    db.commit()
+    db.refresh(task)
+    return {"task": serialize_task(task)}
+
+
+@router.delete("/tasks/{task_id}")
+def delete_task(
+    task_id: str,
+    current=Depends(get_current_organizer),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    event = ensure_task_editable(task, db)
+    if db.query(TaskAssignment).filter_by(task_id=task.id).count() > 0:
+        raise HTTPException(status_code=409, detail="Assigned tasks cannot be deleted")
+    db.add(
+        AuditLog(
+            event_id=event.id,
+            actor_type="ORGANIZER",
+            actor_id=current[1].id,
+            action="TASK_DELETED",
+            entity_type="TASK",
+            entity_id=task.id,
+            metadata_json={"title": task.title},
+        )
+    )
+    db.delete(task)
+    db.commit()
+    return {"taskId": task_id, "status": "deleted"}
 
 
 @router.get("/events/{event_id}")
@@ -96,6 +461,43 @@ def get_dashboard(
             "activeTasks": db.query(Task)
             .filter(Task.event_id == event.id, Task.active.is_(True))
             .count(),
+            "approvedSubmissions": db.query(Submission)
+            .join(TaskAssignment)
+            .filter(
+                TaskAssignment.event_id == event.id,
+                Submission.status == SubmissionStatus.APPROVED.value,
+            )
+            .count(),
+            "rejectedSubmissions": db.query(Submission)
+            .join(TaskAssignment)
+            .filter(
+                TaskAssignment.event_id == event.id,
+                Submission.status == SubmissionStatus.REJECTED.value,
+            )
+            .count(),
+            "pendingProofReviews": db.query(Submission)
+            .join(TaskAssignment)
+            .filter(
+                TaskAssignment.event_id == event.id,
+                Submission.status == SubmissionStatus.PENDING.value,
+            )
+            .count(),
+            "reimbursementRequests": db.query(TravelReimbursement)
+            .filter(TravelReimbursement.event_id == event.id)
+            .count(),
+            "timeRemainingSeconds": max(
+                0,
+                int(
+                    (
+                        (
+                            event.task_deadline_at.replace(tzinfo=timezone.utc)
+                            if event.task_deadline_at.tzinfo is None
+                            else event.task_deadline_at
+                        )
+                        - datetime.now(timezone.utc)
+                    ).total_seconds()
+                ),
+            ),
         },
     }
 
